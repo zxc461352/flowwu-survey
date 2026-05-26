@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>巫奉約身腦齡活｜會員問卷</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --gd:#1a4d3a;--gm:#2d7a5a;--gl:#e8f5ee;
+  --gold:#c8922a;--goldbg:#fdf3e3;
+  --bg:#f4f7f5;--white:#fff;--gray:#666;--border:#dde8e3;
+  --red:#c0392b;--redbg:#fef0ee;
+}
+body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);min-height:100vh;padding-bottom:60px}
+
+/* Header */
+.header{background:var(--gd);padding:14px 18px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(0,0,0,.2)}
+.hlogo{width:38px;height:38px;background:var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.htxt h1{color:#fff;font-size:14px;font-weight:700}
+.htxt p{color:#aaddcc;font-size:11px;margin-top:1px}
+.pbar{background:rgba(255,255,255,.15);height:4px}
+.pfill{background:var(--gold);height:4px;transition:width .5s ease}
+
+/* Container */
+.wrap{padding:18px 15px;max-width:480px;margin:0 auto}
+
+/* Step indicator */
+.step-indicator{display:flex;justify-content:center;gap:6px;margin-bottom:16px}
+.step-dot{width:8px;height:8px;border-radius:50%;background:#ddd;transition:all .3s}
+.step-dot.active{background:var(--gold);transform:scale(1.3)}
+.step-dot.done{background:var(--gm)}
+
+/* Question card */
+.qcard{background:#fff;border-radius:16px;padding:20px;margin-bottom:14px;box-shadow:0 2px 8px rgba(0,0,0,.06);border:1.5px solid var(--border)}
+.qnum{font-size:11px;font-weight:700;color:var(--gold);letter-spacing:1px;margin-bottom:5px}
+.qtitle{font-size:17px;font-weight:900;color:var(--gd);line-height:1.45;margin-bottom:3px}
+.qhint{font-size:12px;color:var(--gray);margin-bottom:14px}
+.qdivider{height:1px;background:var(--border);margin:0 0 14px}
+
+/* Info box */
+.infobox{background:var(--goldbg);border:1.5px solid var(--gold);border-radius:12px;padding:14px 16px;margin-bottom:14px;font-size:13px;color:var(--gd);line-height:1.8}
+
+/* Option button */
+.opt{width:100%;padding:13px 14px;margin-bottom:9px;border:2px solid var(--border);border-radius:12px;background:#fff;font-family:'Noto Sans TC',sans-serif;font-size:14px;font-weight:500;color:#333;text-align:left;cursor:pointer;display:flex;align-items:center;gap:11px;transition:all .2s;position:relative}
+.opt:active{transform:scale(.97)}
+.opt-icon{width:34px;height:34px;border-radius:9px;background:var(--gl);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;transition:all .2s}
+.opt-label{flex:1;line-height:1.4}
+.opt-sub{font-size:11px;color:#999;font-weight:400}
+.opt-check{width:22px;height:22px;border:2px solid var(--border);border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .2s;font-size:13px;color:transparent}
+
+/* Selected states */
+.opt.sel-multi{border-color:var(--gm);background:var(--gl);color:var(--gd)}
+.opt.sel-multi .opt-icon{background:var(--gm)}
+.opt.sel-multi .opt-check{background:var(--gm);border-color:var(--gm);color:#fff}
+.opt.sel-single{border-color:var(--gold);background:var(--goldbg);color:var(--gd)}
+.opt.sel-single .opt-icon{background:var(--gold)}
+.opt.sel-single .opt-check{background:var(--gold);border-color:var(--gold);color:#fff}
+
+/* Count */
+.selcount{font-size:12px;color:var(--gm);font-weight:700;margin:-2px 0 10px;min-height:16px;transition:all .2s}
+
+/* Buttons */
+.btn-next{width:100%;padding:15px;background:var(--gd);color:#fff;border:none;border-radius:13px;font-family:'Noto Sans TC',sans-serif;font-size:15px;font-weight:700;cursor:pointer;margin-top:6px;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn-next:active{transform:scale(.98);background:var(--gm)}
+.btn-next:disabled{background:#ccc;cursor:not-allowed;transform:none}
+
+/* Thank you */
+.thankyou{text-align:center;padding:50px 20px}
+.thankyou .emoji{font-size:60px;margin-bottom:18px}
+.thankyou h2{font-size:22px;font-weight:900;color:var(--gd);margin-bottom:12px}
+.thankyou p{font-size:14px;color:var(--gray);line-height:1.9}
+.thankyou .brand{margin-top:20px;font-size:13px;color:var(--gm);font-weight:700}
+.btn-download{display:block;width:100%;padding:15px;background:var(--gold);color:#fff;border:none;border-radius:13px;font-family:'Noto Sans TC',sans-serif;font-size:15px;font-weight:700;cursor:pointer;margin-top:20px;text-decoration:none;text-align:center}
+
+/* Hidden */
+.hidden{display:none}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="hlogo">🧠</div>
+  <div class="htxt">
+    <h1>巫奉約身腦齡活</h1>
+    <p id="headerSub">會員分眾問卷｜共 7 題</p>
+  </div>
+</div>
+<div class="pbar"><div class="pfill" id="pfill" style="width:0%"></div></div>
+
+<div class="wrap" id="surveyWrap">
+
+  <!-- Step dots -->
+  <div class="step-indicator" id="stepDots"></div>
+
+
+
+  <!-- 題目容器 -->
+  <div id="questionArea"></div>
+
+</div>
+
+<script>
+// ── 題目資料 ──────────────────────────────
+const questions = [
+  {
+    id: 'q1', num: '第 1 題（共 7 題）', type: 'single',
+    title: '您目前主要的居住或活動地區是？',
+    hint: '請選擇一個最符合的選項',
+    options: [
+      {label:'北部', sub:'台北、新北、基隆、桃園、新竹', icon:'🏙', tag:'地區-北部'},
+      {label:'中部', sub:'苗栗、台中、彰化、南投、雲林', icon:'🌾', tag:'地區-中部'},
+      {label:'南部', sub:'嘉義、台南、高雄、屏東', icon:'🌞', tag:'地區-南部'},
+      {label:'東部', sub:'宜蘭、花蓮、台東', icon:'🏔', tag:'地區-東部'},
+      {label:'金馬離島', sub:'金門、馬祖及其他離島', icon:'🏝', tag:'地區-離島'},
+    ]
+  },
+  {
+    id: 'q2', num: '第 2 題（共 7 題）｜可複選', type: 'multi',
+    title: '您與我們的緣分是⋯？',
+    hint: '可以選多個，選完請點「完成」',
+    options: [
+      {label:'我是失智長輩的家屬', sub:'正在照顧或陪伴失智長輩', icon:'👨‍👩‍👧', tag:'身份-失智家屬'},
+      {label:'我想預防認知退化', sub:'關心自己的大腦健康', icon:'🧠', tag:'身份-關心預防'},
+      {label:'我是照護專業人員', sub:'醫護、社工、照服員等', icon:'👩‍⚕️', tag:'身份-照護專業'},
+      {label:'我想成為身腦齡活教練', sub:'有興趣推廣大腦健康', icon:'🏅', tag:'身份-想當教練'},
+      {label:'其他', sub:'', icon:'💭', tag:'身份-其他'},
+    ]
+  },
+  {
+    id: 'q3', num: '第 3 題（共 7 題）', type: 'single',
+    title: '想了解您的年齡層～',
+    hint: '幫助我們客製化最適合您的內容深度',
+    options: [
+      {label:'45 歲以下', sub:'', icon:'🌱', tag:'年齡-45以下'},
+      {label:'46 – 60 歲', sub:'', icon:'🌿', tag:'年齡-46-60'},
+      {label:'61 歲以上', sub:'', icon:'🌳', tag:'年齡-61以上'},
+    ]
+  },
+  {
+    id: 'q4', num: '第 4 題（共 7 題）｜可複選', type: 'multi',
+    title: '以下哪些主題您有興趣？',
+    hint: '可以選多個，選完請點「完成」',
+    options: [
+      {label:'家屬照護技巧', sub:'學習照顧失智長輩的實用方法', icon:'👨‍👩‍👧', tag:'興趣-家屬照護'},
+      {label:'身腦齡活教練培訓', sub:'成為專業大腦健康教練', icon:'🏅', tag:'興趣-教練培訓'},
+      {label:'認知運動課程', sub:'結合身體運動與認知訓練', icon:'🧩', tag:'興趣-認知運動'},
+      {label:'向失智說再見講座', sub:'了解失智預防的科學方法', icon:'🎤', tag:'興趣-失智講座'},
+    ]
+  },
+  {
+    id: 'q5', num: '第 5 題（共 7 題）｜可複選', type: 'multi',
+    title: '您偏好用什麼方式參與活動？',
+    hint: '可以選多個，選完請點「完成」',
+    options: [
+      {label:'實體課程', sub:'到現場上課，面對面互動', icon:'🏫', tag:'形式-實體'},
+      {label:'講座', sub:'聆聽專題演講與分享', icon:'🎤', tag:'形式-講座'},
+      {label:'揪團活動', sub:'與朋友一起參加', icon:'👥', tag:'形式-揪團'},
+      {label:'一對一諮詢', sub:'個人化的專屬建議', icon:'🤝', tag:'形式-諮詢'},
+    ]
+  },
+  {
+    id: 'q6', num: '第 6 題（共 7 題）｜可複選', type: 'multi',
+    title: '您方便參與活動的時段？',
+    hint: '可以選多個，選完請點「完成」',
+    options: [
+      {label:'平日白天', sub:'週一至週五 9:00 – 18:00', icon:'☀️', tag:'時段-平日日'},
+      {label:'平日晚上', sub:'週一至週五 18:00 以後', icon:'🌙', tag:'時段-平日夜'},
+      {label:'週末白天', sub:'週六、週日白天', icon:'🌤', tag:'時段-週末日'},
+      {label:'週末晚上', sub:'週六、週日晚上', icon:'🌃', tag:'時段-週末夜'},
+    ]
+  },
+  {
+    id: 'q7', num: '最後一題！▶', type: 'single',
+    title: '您能接受的課程價位區間是？',
+    hint: '一堂 2 小時、能有效提升認知狀態的優質課程',
+    options: [
+      {label:'500 元以下', sub:'', icon:'💚', tag:'付費-500以下'},
+      {label:'501 – 1,000 元', sub:'', icon:'💙', tag:'付費-501-1000'},
+      {label:'1,001 – 1,500 元', sub:'', icon:'💛', tag:'付費-1001-1500'},
+      {label:'1,501 – 2,000 元', sub:'', icon:'🧡', tag:'付費-1501-2000'},
+      {label:'2,000 元以上', sub:'', icon:'❤️', tag:'付費-2000以上'},
+    ]
+  },
+];
+
+// ── 狀態 ──────────────────────────────────
+let currentStep = 0;
+let answers = {}; // { q1: ['tag1'], q2: ['tag2'], ... }
+let multiSelected = []; // 複選暫存
+
+// ── 初始化 ────────────────────────────────
+function init() {
+  buildDots();
+  renderQuestion(0);
+}
+
+function buildDots() {
+  const el = document.getElementById('stepDots');
+  questions.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'step-dot' + (i === 0 ? ' active' : '');
+    d.id = 'dot' + i;
+    el.appendChild(d);
+  });
+}
+
+function updateProgress(step) {
+  const pct = Math.round((step / questions.length) * 100);
+  document.getElementById('pfill').style.width = pct + '%';
+  document.getElementById('headerSub').textContent = `第 ${step + 1} 題 ／ 共 7 題`;
+  questions.forEach((_, i) => {
+    const d = document.getElementById('dot' + i);
+    if (i < step) { d.className = 'step-dot done'; }
+    else if (i === step) { d.className = 'step-dot active'; }
+    else { d.className = 'step-dot'; }
+  });
+}
+
+// ── 渲染題目 ──────────────────────────────
+function renderQuestion(idx) {
+  currentStep = idx;
+  multiSelected = [];
+  updateProgress(idx);
+  const q = questions[idx];
+  const area = document.getElementById('questionArea');
+
+  let optionsHTML = '';
+  q.options.forEach((opt, i) => {
+    optionsHTML += `
+      <button class="opt" data-idx="${i}" data-tag="${opt.tag}" onclick="selectOption(this, '${q.type}')">
+        <div class="opt-icon">${opt.icon}</div>
+        <div class="opt-label">
+          ${opt.label}
+          ${opt.sub ? `<br><span class="opt-sub">${opt.sub}</span>` : ''}
+        </div>
+        <div class="opt-check">✓</div>
+      </button>`;
+    if (opt.tag === '身份-其他') {
+      optionsHTML += `
+      <div id="otherInputBox" style="display:none;margin:2px 0 10px;padding:0 2px;">
+        <input id="otherInput" type="text" placeholder="請簡單說明您的狀況（選填）"
+          style="width:100%;padding:13px 14px;border:2px solid var(--gm);border-radius:12px;font-family:'Noto Sans TC',sans-serif;font-size:14px;color:#333;outline:none;box-sizing:border-box;background:white;">
+      </div>`;
+    }
+  });
+
+  let bottomHTML = '';
+  if (q.type === 'multi') {
+    bottomHTML = `
+      <div class="selcount" id="selcount">尚未選擇</div>
+      <button class="btn-next" id="nextBtn" onclick="nextQuestion()" disabled>
+        ✓ 完成，前往下一題
+      </button>`;
+  }
+
+  area.innerHTML = `
+    <div class="qcard">
+      <div class="qnum">${q.num}</div>
+      <div class="qtitle">${q.title}</div>
+      <div class="qhint">${q.hint}</div>
+      <div class="qdivider"></div>
+      ${optionsHTML}
+      ${bottomHTML}
+    </div>`;
+}
+
+// ── 選項互動 ──────────────────────────────
+function selectOption(btn, type) {
+  const tag = btn.dataset.tag;
+
+  if (type === 'single') {
+    // 清除其他選中
+    document.querySelectorAll('.opt').forEach(b => b.classList.remove('sel-single'));
+    btn.classList.add('sel-single');
+    answers[questions[currentStep].id] = [tag];
+    // 延遲進入下一題
+    setTimeout(() => nextQuestion(), 400);
+
+  } else {
+    // 複選
+    const idx = multiSelected.indexOf(tag);
+    if (idx > -1) {
+      multiSelected.splice(idx, 1);
+      btn.classList.remove('sel-multi');
+    } else {
+      multiSelected.push(tag);
+      btn.classList.add('sel-multi');
+      btn.style.transform = 'scale(0.97)';
+      setTimeout(() => btn.style.transform = '', 150);
+    }
+    // 控制「其他」輸入框顯示
+    const otherBox = document.getElementById('otherInputBox');
+    if (otherBox) {
+      if (multiSelected.includes('身份-其他')) {
+        otherBox.style.display = 'block';
+        setTimeout(() => { const inp = document.getElementById('otherInput'); if(inp) inp.focus(); }, 100);
+      } else {
+        otherBox.style.display = 'none';
+      }
+    }
+    answers[questions[currentStep].id] = [...multiSelected];
+
+    const countEl = document.getElementById('selcount');
+    if (multiSelected.length === 0) {
+      countEl.textContent = '尚未選擇';
+      countEl.style.color = '#999';
+    } else {
+      // 取得選中的 label
+      const labels = [];
+      document.querySelectorAll('.opt.sel-multi').forEach(b => {
+        labels.push(b.querySelector('.opt-label').childNodes[0].textContent.trim());
+      });
+      countEl.textContent = `已選 ${multiSelected.length} 項：${labels.join('、')}`;
+      countEl.style.color = 'var(--gm)';
+    }
+    document.getElementById('nextBtn').disabled = multiSelected.length === 0;
+  }
+}
+
+// ── 下一題 ────────────────────────────────
+function nextQuestion() {
+  if (currentStep < questions.length - 1) {
+    renderQuestion(currentStep + 1);
+    window.scrollTo({top: 0, behavior: 'smooth'});
+  } else {
+    submitAll();
+  }
+}
+
+// ── 送出全部 ──────────────────────────────
+async function submitAll() {
+  // 收集所有標籤
+  const allTags = [];
+  Object.values(answers).forEach(tags => allTags.push(...tags));
+
+  // 組合訊息
+  // 取得「其他」輸入內容
+  const otherInput = document.getElementById('otherInput');
+  const otherText = otherInput ? otherInput.value.trim() : '';
+  const otherPart = otherText ? ` 其他說明:${otherText}` : '';
+  const msg = `問卷完成 ${allTags.join(' ')}${otherPart}`;
+
+  try {
+    await liff.init({ liffId: '2010178081-hKP9O2RP' });
+    if (liff.isInClient()) {
+      await liff.sendMessages([{ type: 'text', text: msg }]);
+    }
+  } catch(e) {
+    console.log('LIFF send:', e);
+  }
+
+  // 顯示感謝頁
+  document.getElementById('pfill').style.width = '100%';
+  document.getElementById('surveyWrap').innerHTML = `
+    <div class="thankyou">
+      <div class="emoji">🎉</div>
+      <h2>感謝您的填寫！</h2>
+      <p>
+        如同事先答應您的，<br>
+        這是您的小禮物<br>
+        《向失智說再見》友善手冊 🎁<br><br>
+      </p>
+      <div style="background:#e8f5ee;border-radius:12px;padding:16px;margin:0 0 16px;text-align:left;border-left:4px solid #2d7a5a;">
+        <div style="font-size:13px;color:#1a4d3a;line-height:1.9;font-weight:500;">
+          💡 <strong>想把手冊永久存在 LINE 對話裡？</strong><br>
+          關閉問卷後，在對話框輸入：<br>
+          <span style="background:#1a4d3a;color:white;padding:4px 16px;border-radius:20px;font-size:16px;font-weight:900;display:inline-block;margin:8px 0;letter-spacing:2px;">問卷完成</span><br>
+          四個字，機器人就會自動把<br>手冊連結傳到對話框，隨時開啟！
+        </div>
+      </div>
+      <a class="btn-download" href="https://f6862e04-6155-4614-942d-441bfed496ba.usrfiles.com/ugd/f6862e_4acb225d6da7431d8dde414e57e7c06a.pdf" target="_blank">
+        ✦ 下載《向失智說再見》友善手冊
+      </a>
+      <button onclick="if(liff.isInClient()){liff.closeWindow()}else{window.close()}" style="width:100%;padding:13px;background:transparent;color:var(--gm);border:2px solid var(--gm);border-radius:13px;font-family:'Noto Sans TC',sans-serif;font-size:14px;font-weight:700;cursor:pointer;margin-top:10px;">
+        ✓ 下載完成，關閉問卷
+      </button>
+      <div class="brand" style="margin-top:28px">
+        巫奉約身腦齡活｜關心您的腦健康<br>
+        祝您「身腦齡活，越活越年輕」✿
+      </div>
+    </div>`;
+
+  // 4秒後關閉
+  // 延長等待時間
+setTimeout(() => {
+    if (liff.isInClient()) liff.closeWindow();
+  }, 30000);
+}
+
+// ── 啟動 ──────────────────────────────────
+init();
+</script>
+</body>
+</html>
