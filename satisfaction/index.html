@@ -11,7 +11,7 @@
 
     .header{background:linear-gradient(135deg,#e86b3a,#c0392b);color:white;padding:24px 20px 20px;text-align:center;}
     .logo-wrap{margin-bottom:12px;}
-    .logo-wrap img{width:120px;height:auto;border-radius:10px;background:white;padding:8px;}
+    .logo-wrap img{width:120px;height:auto;}
     .header h1{font-size:18px;font-weight:700;margin-bottom:5px;}
     .header p{font-size:13px;opacity:.88;line-height:1.6;}
 
@@ -79,51 +79,62 @@
   <div class="section-desc">請根據您今天在現場觀察到的狀況作答。</div>
 
   <div class="question-card">
-    <div class="question-label"><span class="q-num">1</span>學員今天的參與狀況？<span class="required">*</span></div>
-    <div class="hint">💡 想想看，老師帶活動時，學員有沒有跟著做？有沒有主動舉手或發言？</div>
+    <div class="question-label"><span class="q-num">1</span>您今天的身份是？<span class="required">*</span></div>
+    <div class="hint">💡 請選擇您今天來參加課程的身份。</div>
     <div class="options" data-q="q1">
-      <button class="option-btn" data-value="全程積極參與" data-tag="參與度-全程積極">🌟 全程積極參與</button>
-      <button class="option-btn" data-value="大部分時間有參與" data-tag="參與度-大部分參與">😊 大部分時間有參與</button>
-      <button class="option-btn" data-value="需要鼓勵才參與" data-tag="參與度-需要鼓勵">🤗 需要鼓勵才參與</button>
-      <button class="option-btn" data-value="較被動但沒有抗拒" data-tag="參與度-較被動">😌 較被動，但沒有抗拒</button>
+      <button class="option-btn" data-value="學員本人" data-tag="逆齡-身份-學員本人">🙋 學員本人</button>
+      <button class="option-btn" data-value="家屬或照護者" data-tag="逆齡-身份-家屬照護者">👨‍👩‍👧 家屬或照護者</button>
+      <button class="option-btn" data-value="兩者都是" data-tag="逆齡-身份-兩者都是">👥 兩者都是</button>
     </div>
     <div class="error-msg" id="err-q1">請選擇一個選項</div>
   </div>
 
   <div class="question-card">
-    <div class="question-label"><span class="q-num">2</span>學員今天的情緒狀態？<span class="required">*</span></div>
-    <div class="hint">💡 觀察學員進門到下課，臉上的表情和肢體語言，整體感覺是放鬆的還是緊繃的？</div>
+    <div class="question-label"><span class="q-num">2</span>學員今天的參與狀況？<span class="required">*</span></div>
+    <div class="hint">💡 想想看，老師帶活動時，學員有沒有跟著做？有沒有主動舉手或發言？</div>
     <div class="options" data-q="q2">
-      <button class="option-btn" data-value="開心放鬆" data-tag="情緒-開心放鬆">😄 開心、放鬆</button>
-      <button class="option-btn" data-value="平靜穩定" data-tag="情緒-平靜穩定">😊 平靜、穩定</button>
-      <button class="option-btn" data-value="有點緊張但還好" data-tag="情緒-有點緊張">😅 有點緊張，但還好</button>
-      <button class="option-btn" data-value="不太適應" data-tag="情緒-不太適應">😕 不太適應</button>
+      <button class="option-btn" data-value="全程積極參與" data-tag="參與度-全程積極">🌟 全程積極參與</button>
+      <button class="option-btn" data-value="大部分時間有參與" data-tag="參與度-大部分參與">😊 大部分時間有參與</button>
+      <button class="option-btn" data-value="需要鼓勵才參與" data-tag="參與度-需要鼓勵">🤗 需要鼓勵才參與</button>
+      <button class="option-btn" data-value="較被動但沒有抗拒" data-tag="參與度-較被動">😌 較被動，但沒有抗拒</button>
     </div>
     <div class="error-msg" id="err-q2">請選擇一個選項</div>
   </div>
 
   <div class="question-card">
-    <div class="question-label"><span class="q-num">3</span>這堂課對學員有幫助嗎？<span class="required">*</span></div>
-    <div class="hint">💡 回想學員在課堂中有沒有「亮起來」的瞬間，或是做到某件事時臉上出現笑容？</div>
+    <div class="question-label"><span class="q-num">3</span>學員今天的情緒狀態？<span class="required">*</span></div>
+    <div class="hint">💡 觀察學員進門到下課，臉上的表情和肢體語言，整體感覺是放鬆的還是緊繃的？</div>
     <div class="options" data-q="q3">
-      <button class="option-btn" data-value="非常有幫助" data-tag="幫助感-非常有幫助">🌈 非常有幫助</button>
-      <button class="option-btn" data-value="有幫助" data-tag="幫助感-有幫助">✅ 有幫助</button>
-      <button class="option-btn" data-value="還需要觀察" data-tag="幫助感-還需觀察">🔍 還需要觀察</button>
-      <button class="option-btn" data-value="暫時看不出來" data-tag="幫助感-暫時看不出">🤔 暫時看不出來</button>
+      <button class="option-btn" data-value="開心放鬆" data-tag="情緒-開心放鬆">😄 開心、放鬆</button>
+      <button class="option-btn" data-value="平靜穩定" data-tag="情緒-平靜穩定">😊 平靜、穩定</button>
+      <button class="option-btn" data-value="有點緊張但還好" data-tag="情緒-有點緊張">😅 有點緊張，但還好</button>
+      <button class="option-btn" data-value="不太適應" data-tag="情緒-不太適應">😕 不太適應</button>
     </div>
     <div class="error-msg" id="err-q3">請選擇一個選項</div>
   </div>
 
   <div class="question-card">
-    <div class="question-label"><span class="q-num">4</span>您願意讓學員繼續參加嗎？<span class="required">*</span></div>
-    <div class="hint">💡 綜合今天的觀察，您對這個課程有沒有多一點信心？</div>
+    <div class="question-label"><span class="q-num">4</span>這堂課對學員有幫助嗎？<span class="required">*</span></div>
+    <div class="hint">💡 回想學員在課堂中有沒有「亮起來」的瞬間，或是做到某件事時臉上出現笑容？</div>
     <div class="options" data-q="q4">
+      <button class="option-btn" data-value="非常有幫助" data-tag="幫助感-非常有幫助">🌈 非常有幫助</button>
+      <button class="option-btn" data-value="有幫助" data-tag="幫助感-有幫助">✅ 有幫助</button>
+      <button class="option-btn" data-value="還需要觀察" data-tag="幫助感-還需觀察">🔍 還需要觀察</button>
+      <button class="option-btn" data-value="暫時看不出來" data-tag="幫助感-暫時看不出">🤔 暫時看不出來</button>
+    </div>
+    <div class="error-msg" id="err-q4">請選擇一個選項</div>
+  </div>
+
+  <div class="question-card">
+    <div class="question-label"><span class="q-num">5</span>您願意讓學員繼續參加嗎？<span class="required">*</span></div>
+    <div class="hint">💡 綜合今天的觀察，您對這個課程有沒有多一點信心？</div>
+    <div class="options" data-q="q5">
       <button class="option-btn" data-value="非常願意想報名" data-tag="續班意願-非常願意">🎉 非常願意，想報名正式課程</button>
       <button class="option-btn" data-value="願意但需考慮" data-tag="續班意願-需要考慮">💭 願意，但需要再考慮</button>
       <button class="option-btn" data-value="想多了解" data-tag="續班意願-想多了解">📖 想先多了解課程內容</button>
       <button class="option-btn" data-value="暫不考慮" data-tag="續班意願-暫不考慮">⏸️ 暫時不考慮</button>
     </div>
-    <div class="error-msg" id="err-q4">請選擇一個選項</div>
+    <div class="error-msg" id="err-q5">請選擇一個選項</div>
   </div>
 
   <!-- 第二部：訪問學員 -->
@@ -131,57 +142,57 @@
   <div class="section-desc">請您輕鬆地問問學員，根據學員的反應和表情來作答。</div>
 
   <div class="question-card">
-    <div class="question-label"><span class="q-num">5</span>今天上課開不開心？<span class="required">*</span></div>
+    <div class="question-label"><span class="q-num">6</span>今天上課開不開心？<span class="required">*</span></div>
     <div class="guide">🌿 <strong>溫暖引導：</strong>對學員笑一笑，問他：「今天來這裡，有沒有這樣？😊」觀察學員的表情和點頭反應。</div>
-    <div class="options" data-q="q5">
+    <div class="options" data-q="q6">
       <button class="option-btn" data-value="很開心" data-tag="學員感受-很開心">😄 很開心！</button>
       <button class="option-btn" data-value="還不錯" data-tag="學員感受-還不錯">😊 還不錯</button>
       <button class="option-btn" data-value="普通" data-tag="學員感受-普通">😐 普通</button>
       <button class="option-btn" data-value="不太開心" data-tag="學員感受-不太開心">😕 不太開心</button>
     </div>
-    <div class="error-msg" id="err-q5">請選擇一個選項</div>
+    <div class="error-msg" id="err-q6">請選擇一個選項</div>
   </div>
 
   <div class="question-card">
-    <div class="question-label"><span class="q-num">6</span>哪個環節最好玩？<span class="required">*</span></div>
+    <div class="question-label"><span class="q-num">7</span>哪個環節最好玩？<span class="required">*</span></div>
     <div class="guide">🌿 <strong>溫暖引導：</strong>可以說：「剛才那個遊戲，你覺得好不好玩？還是做操比較有趣？」讓學員點頭或比一比。</div>
-    <div class="options" data-q="q6">
+    <div class="options" data-q="q7">
       <button class="option-btn" data-value="暖身活動" data-tag="最愛環節-暖身活動">🏃 暖身活動</button>
       <button class="option-btn" data-value="認知遊戲" data-tag="最愛環節-認知遊戲">🧩 認知遊戲</button>
       <button class="option-btn" data-value="肢體運動" data-tag="最愛環節-肢體運動">💪 肢體運動</button>
       <button class="option-btn" data-value="互動討論" data-tag="最愛環節-互動討論">💬 互動討論</button>
     </div>
-    <div class="error-msg" id="err-q6">請選擇一個選項</div>
-  </div>
-
-  <div class="question-card">
-    <div class="question-label"><span class="q-num">7</span>課程難不難？<span class="required">*</span></div>
-    <div class="guide">🌿 <strong>溫暖引導：</strong>可以問：「今天有沒有跟不上的地方？還是剛剛好？」留意學員的眼神和點頭方式。</div>
-    <div class="options" data-q="q7">
-      <button class="option-btn" data-value="太簡單" data-tag="難易度-太簡單">😐 太簡單</button>
-      <button class="option-btn" data-value="剛剛好" data-tag="難易度-剛剛好">👍 剛剛好</button>
-      <button class="option-btn" data-value="有點難" data-tag="難易度-有點難">😓 有點難</button>
-    </div>
     <div class="error-msg" id="err-q7">請選擇一個選項</div>
   </div>
 
   <div class="question-card">
-    <div class="question-label"><span class="q-num">8</span>還想不想再來上課？<span class="required">*</span></div>
-    <div class="guide">🌿 <strong>溫暖引導：</strong>可以問：「下次還要來嗎？」然後靜靜觀察學員的表情和反應，不需要催促。</div>
+    <div class="question-label"><span class="q-num">8</span>課程難不難？<span class="required">*</span></div>
+    <div class="guide">🌿 <strong>溫暖引導：</strong>可以問：「今天有沒有跟不上的地方？還是剛剛好？」留意學員的眼神和點頭方式。</div>
     <div class="options" data-q="q8">
+      <button class="option-btn" data-value="太簡單" data-tag="難易度-太簡單">😐 太簡單</button>
+      <button class="option-btn" data-value="剛剛好" data-tag="難易度-剛剛好">👍 剛剛好</button>
+      <button class="option-btn" data-value="有點難" data-tag="難易度-有點難">😓 有點難</button>
+    </div>
+    <div class="error-msg" id="err-q8">請選擇一個選項</div>
+  </div>
+
+  <div class="question-card">
+    <div class="question-label"><span class="q-num">9</span>還想不想再來上課？<span class="required">*</span></div>
+    <div class="guide">🌿 <strong>溫暖引導：</strong>可以問：「下次還要來嗎？」然後靜靜觀察學員的表情和反應，不需要催促。</div>
+    <div class="options" data-q="q9">
       <button class="option-btn" data-value="很想再來" data-tag="再來意願-很想再來">🙋 很想再來！</button>
       <button class="option-btn" data-value="願意再來" data-tag="再來意願-願意再來">😊 願意再來</button>
       <button class="option-btn" data-value="不確定" data-tag="再來意願-不確定">🤔 不確定</button>
       <button class="option-btn" data-value="不想再來" data-tag="再來意願-不想再來">😔 不想再來</button>
     </div>
-    <div class="error-msg" id="err-q8">請選擇一個選項</div>
+    <div class="error-msg" id="err-q9">請選擇一個選項</div>
   </div>
 
   <!-- 有話想說 -->
   <div class="section-title">💬 有話想說</div>
 
   <div class="question-card">
-    <div class="question-label"><span class="q-num">9</span>您有什麼想對我們說的嗎？（選填）</div>
+    <div class="question-label"><span class="q-num">10</span>您有什麼想對我們說的嗎？（選填）</div>
     <div class="hint">💡 歡迎留下您的想法、建議，或是對課程的任何感受，我們都很珍惜！</div>
     <textarea class="open-textarea" id="openText" rows="5" maxlength="300" placeholder="例如：學員下課後主動說想再來……"></textarea>
     <div class="char-count"><span id="charCount">0</span> / 300 字</div>
@@ -210,7 +221,7 @@
 <script>
   const LIFF_ID = "2010178081-HjKZONSe";
   const answers = {};
-  const TOTAL_Q = 8;
+  const TOTAL_Q = 9;
 
   liff.init({ liffId: LIFF_ID }).catch(err => console.warn("LIFF init:", err));
 
