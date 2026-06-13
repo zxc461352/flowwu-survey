@@ -260,8 +260,8 @@
 
     const tags = Object.values(answers).map(a => a.tag).join(" ");
     const openText = document.getElementById("openText").value.trim();
-    let msg = "滿意度問卷完成｜" + tags;
-    if (openText) msg += "｜留言：" + openText;
+    let msg = "✅ 感謝填寫課程問卷！" + tags;
+    if (openText) msg += openText;
 
     try {
       document.getElementById("submitBtn").disabled = true;
