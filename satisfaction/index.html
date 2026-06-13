@@ -258,10 +258,23 @@
     }
     if (!valid) return;
 
-    const tags = Object.values(answers).map(a => a.tag).join(" ");
+    const labelMap = {
+      "q1": "身份", "q2": "參與度", "q3": "情緒", "q4": "幫助感",
+      "q5": "續班意願", "q6": "學員感受", "q7": "最愛環節",
+      "q8": "難易度", "q9": "再來意願"
+    };
     const openText = document.getElementById("openText").value.trim();
-    let msg = "✅ 感謝填寫課程問卷！" + tags;
-    if (openText) msg += openText;
+    let lines = ["✅ 感謝填寫課程問卷！", ""];
+    for (let i = 1; i <= 9; i++) {
+      const q = "q" + i;
+      if (answers[q]) {
+        lines.push(labelMap[q] + "｜" + answers[q].value);
+      }
+    }
+    if (openText) lines.push("留言｜" + openText);
+    const tags = Object.values(answers).map(a => a.tag).join(" ");
+    lines.push(tags);
+    let msg = lines.join("\n");
 
     try {
       document.getElementById("submitBtn").disabled = true;
