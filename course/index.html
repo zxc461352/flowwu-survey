@@ -278,6 +278,7 @@ function toggleTime(item, panelId) {
 function goEnroll(name, time) {
   selClass = name;
   selTime = time;
+  showEnrollForm();
   var b = document.getElementById("selbadge");
   b.innerHTML = "<strong>已選擇：" + name + "</strong><br><span style='font-weight:400;font-size:11px;'>上課時間：" + time + "</span>";
   b.style.display = "block";
@@ -315,6 +316,12 @@ function showGroupForm() {
   document.getElementById("enroll-form").style.display = "none";
   document.getElementById("group-form").style.display = "block";
   document.getElementById("group-form").scrollIntoView({ behavior: "smooth" });
+}
+
+function showEnrollForm() {
+  document.getElementById("group-form").style.display = "none";
+  document.getElementById("enroll-form").style.display = "block";
+  document.getElementById("enroll-form").scrollIntoView({ behavior: "smooth" });
 }
 
 function submitGroup() {
