@@ -97,7 +97,7 @@ body{font-family:-apple-system,'Noto Sans TC',sans-serif;background:#f7f4f0;colo
       <div class="drow"><span class="dico">📍</span><div class="dtxt"><span class="dlbl">上課地點</span><span class="dval">台北市內湖區星雲街 106 號</span></div></div>
       <div class="drow"><span class="dico">💰</span><div class="dtxt"><span class="dlbl">課程費用</span><span class="fee">單堂 $3,600</span></div></div>
       <div class="drow"><span class="dico">👥</span><div class="dtxt"><span class="dlbl">剩餘名額</span><span class="dval">7 個名額，手刀把握！</span><div class="sbar"><div class="sf-red" style="width:35%"></div></div></div></div>
-      <button class="rbtn rb-red" onclick="goEnroll('逆齡專班－週一班')">報名體驗課程</button>
+      <button class="rbtn rb-red" onclick="goEnroll('逆齡專班－週一班','每週一　10:00 – 12:00')">報名體驗課程</button>
     </div>
     <div class="titem" onclick="toggleTime(this,'dp1b')">
       <div class="tdot td-red"></div>
@@ -109,7 +109,7 @@ body{font-family:-apple-system,'Noto Sans TC',sans-serif;background:#f7f4f0;colo
       <div class="drow"><span class="dico">📍</span><div class="dtxt"><span class="dlbl">上課地點</span><span class="dval">台北市內湖區星雲街 106 號</span></div></div>
       <div class="drow"><span class="dico">💰</span><div class="dtxt"><span class="dlbl">課程費用</span><span class="fee">單堂 $3,600</span></div></div>
       <div class="drow"><span class="dico">👥</span><div class="dtxt"><span class="dlbl">剩餘名額</span><span class="dval">7 個名額，手刀把握！</span><div class="sbar"><div class="sf-red" style="width:35%"></div></div></div></div>
-      <button class="rbtn rb-red" onclick="goEnroll('逆齡專班－週五班')">報名體驗課程</button>
+      <button class="rbtn rb-red" onclick="goEnroll('逆齡專班－週五班','每週五　10:00 – 12:00')">報名體驗課程</button>
     </div>
   </div>
 </div>
@@ -135,7 +135,7 @@ body{font-family:-apple-system,'Noto Sans TC',sans-serif;background:#f7f4f0;colo
       <div class="drow"><span class="dico">📍</span><div class="dtxt"><span class="dlbl">上課地點</span><span class="dval">台北市大安區和平東路二段 339 號 6 樓</span></div></div>
       <div class="drow"><span class="dico">💰</span><div class="dtxt"><span class="dlbl">課程費用</span><span class="fee">單堂 $3,000</span></div></div>
       <div class="drow"><span class="dico">👥</span><div class="dtxt"><span class="dlbl">剩餘名額</span><span class="dval">4 個名額，即將額滿！</span><div class="sbar"><div class="sf-teal" style="width:20%"></div></div></div></div>
-      <button class="rbtn rb-teal" onclick="goEnroll('身腦齡活班－大安班')">報名體驗課程</button>
+      <button class="rbtn rb-teal" onclick="goEnroll('身腦齡活班－大安班','每週四　09:30 – 11:30')">報名體驗課程</button>
     </div>
     <div class="titem" onclick="toggleTime(this,'dp2b')">
       <div class="tdot td-teal"></div>
@@ -147,7 +147,7 @@ body{font-family:-apple-system,'Noto Sans TC',sans-serif;background:#f7f4f0;colo
       <div class="drow"><span class="dico">📍</span><div class="dtxt"><span class="dlbl">上課地點</span><span class="dval">台北市內湖區星雲街 106 號</span></div></div>
       <div class="drow"><span class="dico">💰</span><div class="dtxt"><span class="dlbl">課程費用</span><span class="fee">單堂 $3,000</span></div></div>
       <div class="drow"><span class="dico">👥</span><div class="dtxt"><span class="dlbl">剩餘名額</span><span class="dval">10 個名額</span><div class="sbar"><div class="sf-teal" style="width:50%"></div></div></div></div>
-      <button class="rbtn rb-teal" onclick="goEnroll('身腦齡活班－內湖班')">報名體驗課程</button>
+      <button class="rbtn rb-teal" onclick="goEnroll('身腦齡活班－內湖班','每週五　14:00 – 16:00')">報名體驗課程</button>
     </div>
     <div class="titem" onclick="toggleTime(this,'dp2c')">
       <div class="tdot td-teal"></div>
@@ -159,7 +159,7 @@ body{font-family:-apple-system,'Noto Sans TC',sans-serif;background:#f7f4f0;colo
       <div class="drow"><span class="dico">📍</span><div class="dtxt"><span class="dlbl">上課地點</span><span class="dval">桃園市桃園區民有十街 218 號 2 樓</span></div></div>
       <div class="drow"><span class="dico">💰</span><div class="dtxt"><span class="dlbl">課程費用</span><span class="fee">單堂 $3,000</span></div></div>
       <div class="drow"><span class="dico">👥</span><div class="dtxt"><span class="dlbl">剩餘名額</span><span class="dval">10 個名額</span><div class="sbar"><div class="sf-teal" style="width:50%"></div></div></div></div>
-      <button class="rbtn rb-teal" onclick="goEnroll('身腦齡活班－大有班')">報名體驗課程</button>
+      <button class="rbtn rb-teal" onclick="goEnroll('身腦齡活班－大有班','每週一　10:00 – 11:30')">報名體驗課程</button>
     </div>
   </div>
 </div>
@@ -226,10 +226,10 @@ function toggleTime(item, panelId) {
   }
 }
 
-function goEnroll(name) {
+function goEnroll(name, time) {
   selClass = name;
   var b = document.getElementById("selbadge");
-  b.textContent = "已選擇：" + name;
+  b.innerHTML = "<strong>已選擇：" + name + "</strong><br><span style='font-weight:400;font-size:11px;'>上課時間：" + time + "</span>";
   b.style.display = "block";
   document.getElementById("enroll-form").scrollIntoView({ behavior: "smooth" });
 }
