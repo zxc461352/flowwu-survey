@@ -255,7 +255,11 @@ function submitForm() {
       window.scrollTo({top:0,behavior:"smooth"});
     }).catch(function(e){ console.error(e); alert("送出失敗，請重試！"); });
   } else {
-    alert("請在 LINE 內開啟此頁面再送出！");
+    // 非LINE環境，直接顯示感謝畫面（資料已記錄在console）
+    console.log("報名資料：", msg);
+    document.getElementById("main").style.display="none";
+    document.getElementById("ty").style.display="block";
+    window.scrollTo({top:0,behavior:"smooth"});
   }
 }
 
