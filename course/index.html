@@ -278,11 +278,15 @@ function toggleTime(item, panelId) {
 function goEnroll(name, time) {
   selClass = name;
   selTime = time;
-  showEnrollForm();
+  // 強制顯示一般報名表單，隱藏揪團表單
+  document.getElementById("group-form").style.display = "none";
+  document.getElementById("enroll-form").style.display = "block";
   var b = document.getElementById("selbadge");
   b.innerHTML = "<strong>已選擇：" + name + "</strong><br><span style='font-weight:400;font-size:11px;'>上課時間：" + time + "</span>";
   b.style.display = "block";
-  document.getElementById("enroll-form").scrollIntoView({ behavior: "smooth" });
+  setTimeout(function(){
+    document.getElementById("enroll-form").scrollIntoView({ behavior: "smooth" });
+  }, 100);
 }
 
 function submitForm() {
