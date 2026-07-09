@@ -164,6 +164,33 @@ body{font-family:-apple-system,'Noto Sans TC',sans-serif;background:#f7f4f0;colo
   </div>
 </div>
 
+<div class="ccard">
+  <div class="ccard-hd" onclick="toggleCard(this)">
+    <div class="cicon" style="background:#f0eeff;">🤝</div>
+    <div class="cinfo">
+      <div class="cname">揪團動力班</div>
+      <span class="ctag" style="background:#f0eeff;color:#5b3fc7;">團體預約制・教練到府</span>
+      <div class="cdesc">同儕的影響會增加學習動力與趣味性，召集 5～10 人，教練直接到您的社區或場地授課，費用每人 NT$3,000。</div>
+    </div>
+    <span class="carrow">&#8250;</span>
+  </div>
+  <div class="tlist">
+    <div class="titem" onclick="toggleTime(this,'dp3a')">
+      <div class="tdot" style="background:#7c5cfc;"></div>
+      <div class="tinfo"><div class="tname">揪團預約</div><div class="tsub">5～10 人・教練到府授課・預約制</div></div>
+      <span class="tspots" style="background:#f0eeff;color:#5b3fc7;">預約制</span>
+      <span class="tchev">&#8250;</span>
+    </div>
+    <div class="dpanel" id="dp3a">
+      <div class="drow"><span class="dico">🤝</span><div class="dtxt"><span class="dlbl">適合對象</span><span class="dval">5～10 人願意一起團體上課</span></div></div>
+      <div class="drow"><span class="dico">📍</span><div class="dtxt"><span class="dlbl">上課地點</span><span class="dval">由您指定社區、場地或活動中心</span></div></div>
+      <div class="drow"><span class="dico">💰</span><div class="dtxt"><span class="dlbl">課程費用</span><span class="fee">每人 $3,000</span></div></div>
+      <div class="drow"><span class="dico">📅</span><div class="dtxt"><span class="dlbl">上課時間</span><span class="dval">依雙方協調排定</span></div></div>
+      <button class="rbtn" style="background:linear-gradient(135deg,#7c5cfc,#5b3fc7);" onclick="showGroupForm()">揪團報名上課</button>
+    </div>
+  </div>
+</div>
+
 <div class="sec-label" style="margin-top:16px;">填寫報名資料</div>
 <div class="fcard" id="enroll-form">
   <div class="ftitle">🙋 報名體驗課程</div>
@@ -182,6 +209,27 @@ body{font-family:-apple-system,'Noto Sans TC',sans-serif;background:#f7f4f0;colo
   <button class="fsub-btn" onclick="submitForm()">送出報名 ✉️</button>
   <div class="fnote">📞 我們將於 1–2 個工作天內與您聯繫</div>
 </div>
+</div>
+
+<!-- 揪團報名表單 -->
+<div class="fcard" id="group-form" style="display:none;margin-top:4px;">
+  <div class="ftitle">🤝 揪團動力班報名</div>
+  <div class="fsub">填寫後將有專人與您聯繫確認，期待與您的團隊相見！</div>
+  <div class="fg"><label class="flbl">姓名 *</label><input class="finput" id="g-name" type="text" placeholder="請輸入姓名"/></div>
+  <div class="fg"><label class="flbl">電話 *</label><input class="finput" id="g-phone" type="tel" placeholder="請輸入手機號碼"/></div>
+  <div class="fg"><label class="flbl">電子信箱 *</label><input class="finput" id="g-email" type="email" placeholder="請輸入 Email"/></div>
+  <div class="fg"><label class="flbl">揪團人數 *</label>
+    <select class="fselect" id="g-count">
+      <option value="">請選擇</option>
+      <option>5 人</option><option>6 人</option><option>7 人</option>
+      <option>8 人</option><option>9 人</option><option>10 人</option>
+    </select>
+  </div>
+  <div class="fg"><label class="flbl">希望上課地點 *</label><input class="finput" id="g-location" type="text" placeholder="請填寫地址或場地名稱"/></div>
+  <div class="fg"><label class="flbl">希望上課時間 *</label><input class="finput" id="g-time" type="text" placeholder="例如：週六上午 10:00、平日下午皆可"/></div>
+  <div class="fg"><label class="flbl">備註（選填）</label><textarea class="ftarea" id="g-note" placeholder="其他需求或說明……"></textarea></div>
+  <button class="fsub-btn" style="background:linear-gradient(135deg,#7c5cfc,#5b3fc7);" onclick="submitGroup()">送出揪團報名 ✉️</button>
+  <div class="fnote">📞 我們將於 1–2 個工作天內與您聯繫</div>
 </div>
 
 <div class="ty" id="ty">
@@ -260,6 +308,36 @@ function submitForm() {
     document.getElementById("main").style.display="none";
     document.getElementById("ty").style.display="block";
     window.scrollTo({top:0,behavior:"smooth"});
+  }
+}
+
+function showGroupForm() {
+  document.getElementById("enroll-form").style.display = "none";
+  document.getElementById("group-form").style.display = "block";
+  document.getElementById("group-form").scrollIntoView({ behavior: "smooth" });
+}
+
+function submitGroup() {
+  var name = document.getElementById("g-name").value.trim();
+  var phone = document.getElementById("g-phone").value.trim();
+  var email = document.getElementById("g-email").value.trim();
+  var count = document.getElementById("g-count").value;
+  var location = document.getElementById("g-location").value.trim();
+  var time = document.getElementById("g-time").value.trim();
+  var note = document.getElementById("g-note").value.trim();
+  if (!name||!phone||!email||!count||!location||!time) { alert("請填寫所有必填欄位！"); return; }
+  var lines = ["揪團動力班報名申請","","姓名|"+name,"電話|"+phone,"Email|"+email,"揪團人數|"+count,"上課地點|"+location,"希望時間|"+time];
+  if (note) lines.push("備註|"+note);
+  lines.push("","報名-揪團動力班");
+  var msg = lines.join("\u000A");
+  if (liffReady && liff.isInClient()) {
+    liff.sendMessages([{type:"text",text:msg}]).then(function(){
+      document.getElementById("main").style.display="none";
+      document.getElementById("ty").style.display="block";
+      window.scrollTo({top:0,behavior:"smooth"});
+    }).catch(function(e){ console.error(e); alert("送出失敗，請重試！"); });
+  } else {
+    alert("請在 LINE 內開啟此頁面再送出！");
   }
 }
 
