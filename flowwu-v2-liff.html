@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>巫奉約身腦齡活｜會員問卷</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif; color: #204c3c; background: #f4f8f6; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    .shell { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+    .status { flex: none; padding: 10px 16px; padding-top: max(10px, env(safe-area-inset-top)); border-bottom: 1px solid #d8e5de; font-size: 14px; line-height: 1.5; background: #f4f8f6; }
+    .status p { margin: 0; }
+    .detail { color: #52645b; font-size: 12px; }
+    .status[data-state="failed"] { color: #805020; }
+    iframe { display: block; width: 100%; flex: 1; min-height: 0; border: 0; background: #f4f8f6; }
+    iframe[hidden] { display: none; }
+    .notice { padding: 28px 20px; line-height: 1.7; }
+    .notice[hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div id="status" class="status" role="status" aria-live="polite">
+      <p id="statusText">正在連接 LINE…</p>
+      <p id="statusDetail" class="detail">請稍候，問卷會自動顯示。</p>
+    </div>
+    <div id="notice" class="notice" hidden></div>
+    <iframe id="surveyFrame" title="FlowWu 新會員問卷 V2" hidden
+      referrerpolicy="strict-origin-when-cross-origin"></iframe>
+  </div>
+  <script>
+  (function () {
+    'use strict';
+
+    // 上線前只需填入這兩個已核對的網址。此頁必須直接由固定的 HTTPS 網址開啟。
+    var CONFIG = {
+      LIFF_ID: '2010178081-N8atNKIK',
+      GAS_EXEC_URL: 'https://script.google.com/macros/s/AKfycbz2GqoLeLden7ueAGODaXqFAd9PgHdMGxw-FuZxuMvAU7QaP_gjKdlGQH196d_AoHFs/exec',
+      EXPECTED_HOST_URL: 'https://zxc461352.github.io/flowwu-survey/flowwu-v2-liff.html'
+    };
+    var SDK_URL = 'https://static.line-scdn.net/liff/edge/2/sdk.js';
+    var SDK_TIMEOUT_MS = 10000;
+    var INIT_TIMEOUT_MS = 12000;
+    var PROFILE_TIMEOUT_MS = 8000;
+    var SEND_TIMEOUT_MS = 8000;
+    var FRAME_READY_TIMEOUT_MS = 20000;
+    var MAX_SEND_RECORDS = 30;
+    var VERSION = 1;
+    var ALLOWED_TOKENS = (
+      'REGION_TP REGION_TY REGION_NORTH REGION_CENTRAL REGION_SOUTH REGION_EAST REGION_OTHER ' +
+      'ID_PUBLIC ID_FAMILY ID_CARE ID_EDU ID_SECOND ID_OTHER ' +
+      'NEED_BRAINAGE NEED_COURSE NEED_COACH NEED_EVENT NEED_FAMILY NEED_COOP ' +
+      'INT_COG INT_BRAIN INT_FAMILY INT_COACH INT_EVENT'
+    ).split(' ');
+    var allowedTokens = Object.create(null);
+    ALLOWED_TOKENS.forEach(function (token) { allowedTokens[token] = true; });
+
+    var statusBox = document.getElementById('status');
+    var statusText = document.getElementById('statusText');
+    var statusDetail = document.getElementById('statusDetail');
+    var notice = document.getElementById('notice');
+    var frame = document.getElementById('surveyFrame');
+    var channel = '';
+    var childOrigin = '';
+    var childSource = null;
+    var frameStarted = false;
+    var frameReadyTimer = null;
+    var sdkTimer = null;
+    var initTimer = null;
+    var profileTimer = null;
+    var gasUrl;
+    var sendRecords = Object.create(null);
+    var sendRecordCount = 0;
+    var line = { userId: '', displayName: '' };
+    var liffState = {
+      liffId: CONFIG.LIFF_ID,
+      status: 'idle', inClient: null, isLoggedIn: null,
+      profileStatus: 'idle', contextType: 'unknown'
+    };
+    var lastError = null;
+
+    // 不把 SDK 錯誤原文、登入憑證或網址查詢參數傳給問卷。
+    function safeError(stage, code, message) {
+      return { stage: stage, code: code, message: message };
+    }
+    function sdkError(stage, err, fallback) {
+      var rawCode = err && (err.code || err.status);
+      var code = typeof rawCode === 'number' ? String(rawCode) : String(rawCode || 'SDK_ERROR');
+      if (!/^[A-Za-z0-9_-]{1,60}$/.test(code)) code = 'SDK_ERROR';
+      return safeError(stage, code, fallback);
+    }
+    function setStatus(text, detail, failed) {
+      statusText.textContent = text;
+      statusDetail.textContent = detail || '';
+      statusBox.setAttribute('data-state', failed ? 'failed' : 'normal');
+    }
+    function showNotice(text) {
+      notice.textContent = text;
+      notice.hidden = false;
+    }
+    function makeChannel() {
+      if (!window.crypto || typeof window.crypto.getRandomValues !== 'function') {
+        throw new Error('NO_SECURE_RANDOM');
+      }
+      var bytes = new Uint8Array(24);
+      window.crypto.getRandomValues(bytes);
+      return Array.prototype.map.call(bytes, function (b) {
+        return ('0' + b.toString(16)).slice(-2);
+      }).join('');
+    }
+    function validId(id) {
+      return typeof id === 'string' && /^[A-Za-z0-9_-]{1,120}$/.test(id);
+    }
+    function isGoogleContentOrigin(origin) {
+      // 只接受 Google Apps Script 產生的 HTTPS HTML 執行網域。
+      return typeof origin === 'string' &&
+        /^https:\/\/(?:[a-z0-9-]+-)?script\.googleusercontent\.com$/.test(origin);
+    }
+    function isSurveySource(source) {
+      // /exec 可能再包一層 Google HTML iframe；只檢查 Window 的父子關係，不讀取跨網域內容。
+      try {
+        var candidate = source;
+        for (var depth = 0; candidate && depth < 5; depth++) {
+          if (candidate === frame.contentWindow) return true;
+          if (candidate === window || candidate.parent === candidate) return false;
+          candidate = candidate.parent;
+        }
+      } catch (e) { return false; }
+      return false;
+    }
+    function envelope(type, extra) {
+      var data = { fwBridge: channel, version: VERSION, type: type };
+      Object.keys(extra || {}).forEach(function (key) { data[key] = extra[key]; });
+      return data;
+    }
+    function post(type, extra) {
+      if (!childSource || !childOrigin) return;
+      try { childSource.postMessage(envelope(type, extra), childOrigin); }
+      catch (e) { /* 頁面已關閉時不再嘗試傳送。 */ }
+    }
+    function publishStatus() {
+      post('FWV2_STATUS', {
+        line: { userId: line.userId, displayName: line.displayName },
+        liff: {
+          liffId: liffState.liffId, status: liffState.status,
+          inClient: liffState.inClient, isLoggedIn: liffState.isLoggedIn,
+          profileStatus: liffState.profileStatus, contextType: liffState.contextType
+        },
+        error: lastError
+      });
+    }
+    function refreshStatus() {
+      if (liffState.status === 'ready') {
+        if (liffState.inClient && liffState.profileStatus === 'ready') {
+          setStatus('LINE 已連線', '填完問卷後，會嘗試回傳到剛才的聊天室。');
+        } else if (!liffState.inClient) {
+          setStatus('問卷可正常填寫', '請從 LINE 官方帳號的「開始填寫」開啟，才能回傳聊天室。', true);
+        } else if (liffState.profileStatus === 'loading') {
+          setStatus('LINE 已連線，正在取得個人資料…', '問卷會在確認連線後顯示。');
+        } else {
+          setStatus('問卷可正常填寫', '尚未取得 LINE 個人資料；請查看問卷中的連線檢查。', true);
+        }
+      } else if (liffState.status === 'loading') {
+        setStatus('正在連接 LINE…', '請稍候，問卷會自動顯示。');
+      } else {
+        setStatus('問卷可正常填寫，LINE 連線尚未完成', '資料仍可保存；請查看問卷中的連線檢查。', true);
+      }
+      publishStatus();
+    }
+    function startFrame() {
+      if (frameStarted) return;
+      frameStarted = true;
+      var iframeUrl = new URL(gasUrl.href);
+      iframeUrl.searchParams.set('fwBridge', channel);
+      iframeUrl.searchParams.set('fwBridgeVersion', String(VERSION));
+      frame.src = iframeUrl.href;
+      frame.hidden = false;
+      frameReadyTimer = setTimeout(function () {
+        if (childSource) return;
+        setStatus('問卷尚未完成連線', '請確認 Apps Script 已更新部署為包含連線橋接的新版本。', true);
+      }, FRAME_READY_TIMEOUT_MS);
+    }
+    function initFailed(error, status) {
+      liffState.status = status || 'failed';
+      liffState.profileStatus = 'unavailable';
+      lastError = error;
+      refreshStatus();
+      startFrame();
+    }
+    function finishProfile(status, error) {
+      clearTimeout(profileTimer);
+      liffState.profileStatus = status;
+      if (error) lastError = error;
+      else lastError = null;
+      refreshStatus();
+      startFrame();
+    }
+    function afterInit() {
+      clearTimeout(initTimer);
+      liffState.status = 'ready';
+      lastError = null;
+      try { liffState.inClient = !!window.liff.isInClient(); }
+      catch (e) { liffState.inClient = null; }
+      try { liffState.isLoggedIn = !!window.liff.isLoggedIn(); }
+      catch (e) { liffState.isLoggedIn = null; }
+      try {
+        var context = window.liff.getContext();
+        var type = context && context.type;
+        liffState.contextType = /^(utou|group|room|external|none)$/.test(type) ? type : 'unknown';
+      } catch (e) { liffState.contextType = 'unknown'; }
+      if (!liffState.isLoggedIn) {
+        finishProfile('unavailable', safeError('profile', 'NOT_LOGGED_IN', 'LINE 尚未登入，因此沒有取得個人資料。'));
+        return;
+      }
+      liffState.profileStatus = 'loading';
+      refreshStatus();
+      profileTimer = setTimeout(function () {
+        finishProfile('timeout', safeError('profile', 'PROFILE_TIMEOUT', '取得個人資料等待超過 8 秒；稍後成功會自動更新。'));
+      }, PROFILE_TIMEOUT_MS);
+      try {
+        Promise.resolve(window.liff.getProfile()).then(function (profile) {
+          if (!profile || typeof profile.userId !== 'string' || !profile.userId) {
+            finishProfile('failed', safeError('profile', 'EMPTY_PROFILE', 'LINE 未回傳可用的個人資料。'));
+            return;
+          }
+          line.userId = profile.userId;
+          line.displayName = typeof profile.displayName === 'string' ? profile.displayName : '';
+          finishProfile('ready', null);
+        }, function (err) {
+          finishProfile('failed', sdkError('profile', err, 'LINE 個人資料讀取失敗。'));
+        });
+      } catch (err) {
+        finishProfile('failed', sdkError('profile', err, 'LINE 個人資料讀取失敗。'));
+      }
+    }
+    function initSdk() {
+      clearTimeout(sdkTimer);
+      if (!window.liff || typeof window.liff.init !== 'function') {
+        initFailed(safeError('sdk', 'SDK_UNAVAILABLE', 'LINE 程式載入失敗。'));
+        return;
+      }
+      liffState.status = 'loading';
+      refreshStatus();
+      initTimer = setTimeout(function () {
+        initFailed(safeError('init', 'INIT_TIMEOUT', 'LINE 初始化等待超過 12 秒；稍後成功會自動更新。'), 'timeout');
+      }, INIT_TIMEOUT_MS);
+      try {
+        // 保留網址上的 liff.* 參數，直到 init 成功。此頁沒有自動改寫網址或登入重新導向。
+        Promise.resolve(window.liff.init({ liffId: CONFIG.LIFF_ID })).then(afterInit, function (err) {
+          clearTimeout(initTimer);
+          initFailed(sdkError('init', err, 'LINE 初始化失敗。'));
+        });
+      } catch (err) {
+        clearTimeout(initTimer);
+        initFailed(sdkError('init', err, 'LINE 初始化失敗。'));
+      }
+    }
+    function loadSdk() {
+      liffState.status = 'loading';
+      refreshStatus();
+      var script = document.createElement('script');
+      script.src = SDK_URL;
+      script.async = true;
+      sdkTimer = setTimeout(function () {
+        initFailed(safeError('sdk', 'SDK_TIMEOUT', 'LINE 程式載入等待超過 10 秒；稍後成功會自動更新。'), 'timeout');
+      }, SDK_TIMEOUT_MS);
+      script.onload = initSdk;
+      script.onerror = function () {
+        clearTimeout(sdkTimer);
+        initFailed(safeError('sdk', 'SDK_LOAD_FAILED', 'LINE 程式載入失敗。'));
+      };
+      document.head.appendChild(script);
+    }
+
+    function validateMessages(messages) {
+      if (!Array.isArray(messages) || messages.length < 1 || messages.length > 5) return null;
+      var safe = [];
+      for (var i = 0; i < messages.length; i++) {
+        var message = messages[i];
+        if (!message || message.type !== 'text' || typeof message.text !== 'string' ||
+            message.text.length > 600 || !/^FWV2 [A-Z_]+(?: [A-Z_]+)*$/.test(message.text)) return null;
+        var tokens = message.text.slice(5).split(' ');
+        if (tokens.length < 1 || tokens.length > ALLOWED_TOKENS.length) return null;
+        var seen = Object.create(null);
+        for (var j = 0; j < tokens.length; j++) {
+          if (!allowedTokens[tokens[j]] || seen[tokens[j]]) return null;
+          seen[tokens[j]] = true;
+        }
+        safe.push({ type: 'text', text: message.text });
+      }
+      return safe;
+    }
+    function sendResult(requestId, submissionId, status, error) {
+      post('FWV2_SEND_RESULT', {
+        requestId: requestId, submissionId: submissionId, status: status,
+        error: error || null
+      });
+    }
+    function notifyRecord(record) {
+      Object.keys(record.requests).forEach(function (requestId) {
+        sendResult(requestId, record.submissionId, record.status, record.error);
+      });
+    }
+    function handleSend(data) {
+      if (!validId(data.requestId) || !validId(data.submissionId)) return;
+      var messages = validateMessages(data.messages);
+      if (!messages) {
+        sendResult(data.requestId, data.submissionId, 'failed', safeError('send', 'INVALID_MESSAGES', '回傳指令格式不正確。'));
+        return;
+      }
+      var fingerprint = JSON.stringify(messages);
+      var old = sendRecords[data.submissionId];
+      if (old) {
+        if (old.fingerprint !== fingerprint) {
+          sendResult(data.requestId, data.submissionId, 'failed', safeError('send', 'SUBMISSION_MISMATCH', '同一份問卷的回傳指令不一致。'));
+          return;
+        }
+        old.requests[data.requestId] = true;
+        if (old.status !== 'pending') {
+          sendResult(data.requestId, data.submissionId, old.status, old.error);
+        }
+        return;
+      }
+      if (sendRecordCount >= MAX_SEND_RECORDS) {
+        sendResult(data.requestId, data.submissionId, 'failed', safeError('send', 'SEND_LIMIT', '此頁的回傳次數已達上限。'));
+        return;
+      }
+      if (liffState.status !== 'ready' || !liffState.inClient || !liffState.isLoggedIn ||
+          !window.liff || typeof window.liff.sendMessages !== 'function') {
+        sendResult(data.requestId, data.submissionId, 'failed', safeError('send', 'LIFF_NOT_READY', 'LINE 連線尚未就緒，問卷資料已保存。'));
+        return;
+      }
+      if (!/^(utou|group|room)$/.test(liffState.contextType)) {
+        sendResult(data.requestId, data.submissionId, 'failed', safeError('send', 'NO_CHAT_CONTEXT', '請從官方帳號聊天室的按鈕開啟問卷。'));
+        return;
+      }
+      var record = {
+        submissionId: data.submissionId, fingerprint: fingerprint,
+        requests: Object.create(null), status: 'pending', error: null, timer: null
+      };
+      record.requests[data.requestId] = true;
+      sendRecords[data.submissionId] = record;
+      sendRecordCount++;
+      record.timer = setTimeout(function () {
+        if (record.status !== 'pending') return;
+        // 不確定是否已送出時，保留紀錄，避免重送造成聊天室重複訊息。
+        record.status = 'unknown';
+        record.error = safeError('send', 'SEND_TIMEOUT', '尚未確認訊息是否送出；請查看聊天室，稍後結果會自動更新。');
+        notifyRecord(record);
+      }, SEND_TIMEOUT_MS);
+      try {
+        Promise.resolve(window.liff.sendMessages(messages)).then(function () {
+          clearTimeout(record.timer);
+          record.status = 'sent';
+          record.error = null;
+          notifyRecord(record);
+        }, function (err) {
+          clearTimeout(record.timer);
+          record.status = 'failed';
+          record.error = sdkError('send', err, 'LINE 拒絕回傳訊息，問卷資料已保存。');
+          notifyRecord(record);
+        });
+      } catch (err) {
+        clearTimeout(record.timer);
+        record.status = 'failed';
+        record.error = sdkError('send', err, 'LINE 回傳訊息失敗，問卷資料已保存。');
+        notifyRecord(record);
+      }
+    }
+    function handleClose(data) {
+      if (!validId(data.requestId)) return;
+      if (liffState.status !== 'ready' || !liffState.inClient ||
+          !window.liff || typeof window.liff.closeWindow !== 'function') {
+        post('FWV2_ACTION_RESULT', { requestId: data.requestId, action: 'close', status: 'failed',
+          error: safeError('close', 'CLOSE_UNAVAILABLE', '請點畫面右上角的關閉按鈕返回 LINE。') });
+        return;
+      }
+      try {
+        window.liff.closeWindow();
+        post('FWV2_ACTION_RESULT', { requestId: data.requestId, action: 'close', status: 'success', error: null });
+      } catch (err) {
+        post('FWV2_ACTION_RESULT', { requestId: data.requestId, action: 'close', status: 'failed',
+          error: sdkError('close', err, '請點畫面右上角的關閉按鈕返回 LINE。') });
+      }
+    }
+    function onMessage(event) {
+      var data = event.data;
+      if (!data || typeof data !== 'object' || Array.isArray(data) ||
+          data.version !== VERSION || data.fwBridge !== channel ||
+          !frameStarted || !isSurveySource(event.source) || !isGoogleContentOrigin(event.origin)) return;
+      if (data.type === 'FWV2_READY') {
+        if (childSource && (event.source !== childSource || event.origin !== childOrigin)) return;
+        childSource = event.source;
+        childOrigin = event.origin;
+        clearTimeout(frameReadyTimer);
+        publishStatus();
+        return;
+      }
+      if (!childSource || event.source !== childSource || event.origin !== childOrigin) return;
+      if (data.type === 'FWV2_SEND') handleSend(data);
+      else if (data.type === 'FWV2_CLOSE') handleClose(data);
+    }
+
+    function start() {
+      try {
+        gasUrl = new URL(CONFIG.GAS_EXEC_URL);
+        var expected = new URL(CONFIG.EXPECTED_HOST_URL);
+        if (gasUrl.protocol !== 'https:' || gasUrl.hostname !== 'script.google.com' ||
+            !/^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(gasUrl.pathname) || gasUrl.search || gasUrl.hash ||
+            expected.protocol !== 'https:' || expected.search || expected.hash ||
+            expected.origin !== window.location.origin || expected.pathname !== window.location.pathname) {
+          throw new Error('INVALID_CONFIG');
+        }
+        if (window.top !== window.self) throw new Error('TOP_LEVEL_REQUIRED');
+        channel = makeChannel();
+      } catch (err) {
+        setStatus('此頁的連線設定尚未完成', '請先核對固定問卷網址與 Apps Script 的 /exec 網址。', true);
+        showNotice('問卷入口需要使用已核對的 HTTPS 固定網址，並填入目前使用的 Apps Script 部署網址。設定完成後再從 LINE 官方帳號開啟。');
+        return;
+      }
+      window.addEventListener('message', onMessage);
+      loadSdk();
+    }
+    start();
+  })();
+  </script>
+</body>
+</html>
