@@ -273,6 +273,91 @@
       document.head.appendChild(script);
     }
 
+
+  // 中文作答紀錄只採用已核對的問卷選項；分類代碼僅在入口內部驗證。
+  var CHINESE_RECORD_TITLE = '我的會員問卷紀錄';
+  var CHINESE_RECORD_RULES = [{"id":"q1","label":"地區","multi":false,"values":["雙北","桃園","北部其他","中部","南部","東部","離島／海外"],"tokens":{"雙北":"REGION_TP","桃園":"REGION_TY","北部其他":"REGION_NORTH","中部":"REGION_CENTRAL","南部":"REGION_SOUTH","東部":"REGION_EAST","離島／海外":"REGION_OTHER"}},{"id":"q2","label":"身份","multi":true,"values":["我自己想維持與提升腦健康","我關心或陪伴家人的腦健康","我是照護／長照／健康相關專業人員","我從事教育、活動帶領或社區服務","我正在規劃退休後或第二職涯","其他"],"tokens":{"我自己想維持與提升腦健康":"ID_PUBLIC","我關心或陪伴家人的腦健康":"ID_FAMILY","我是照護／長照／健康相關專業人員":"ID_CARE","我從事教育、活動帶領或社區服務":"ID_EDU","我正在規劃退休後或第二職涯":"ID_SECOND","其他":"ID_OTHER"}},{"id":"q3","label":"年齡","multi":false,"values":["45歲以下","46～55歲","56～65歲","66～75歲","76歲以上"],"tokens":{}},{"id":"q4","label":"主要需求","multi":false,"values":["我的腦年齡","身腦齡活課程","身腦齡活教練培訓","講座與活動","家人的腦健康","企業／社區／機構合作"],"tokens":{"我的腦年齡":"NEED_BRAINAGE","身腦齡活課程":"NEED_COURSE","身腦齡活教練培訓":"NEED_COACH","講座與活動":"NEED_EVENT","家人的腦健康":"NEED_FAMILY","企業／社區／機構合作":"NEED_COOP"}},{"id":"q5","label":"感興趣","multi":true,"values":["認知訓練","腦健康知識","家屬照護","教練培訓","講座活動"],"tokens":{"認知訓練":"INT_COG","腦健康知識":"INT_BRAIN","家屬照護":"INT_FAMILY","教練培訓":"INT_COACH","講座活動":"INT_EVENT"}},{"id":"q6","label":"參與方式","multi":true,"values":["實體課程","講座","揪團活動","一對一諮詢","線上資訊／影音"],"tokens":{}},{"id":"q7","label":"方便時段","multi":true,"values":["平日白天","平日晚上","週末白天","週末晚上","時間都可以"],"tokens":{}}];
+
+  function normaliseChineseAnswers(input) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+    var keys = Object.keys(input);
+    if (keys.length !== 8 || keys.some(function (key) { return !/^(q[1-7]|q2Other)$/.test(key); })) return null;
+    var safe = {};
+    for (var i = 0; i < CHINESE_RECORD_RULES.length; i++) {
+      var rule = CHINESE_RECORD_RULES[i];
+      if (!Object.prototype.hasOwnProperty.call(input, rule.id)) return null;
+      var answer = input[rule.id];
+      if (rule.multi) {
+        if (!Array.isArray(answer) || !answer.length || answer.length > rule.values.length) return null;
+        var seen = Object.create(null);
+        for (var j = 0; j < answer.length; j++) {
+          if (typeof answer[j] !== 'string' || rule.values.indexOf(answer[j]) === -1 || seen[answer[j]]) return null;
+          seen[answer[j]] = true;
+        }
+        if (rule.id === 'q7' && answer.indexOf('時間都可以') !== -1 && answer.length !== 1) return null;
+        safe[rule.id] = rule.values.filter(function (value) { return !!seen[value]; });
+      } else {
+        if (typeof answer !== 'string' || rule.values.indexOf(answer) === -1) return null;
+        safe[rule.id] = answer;
+      }
+    }
+    if (!Object.prototype.hasOwnProperty.call(input, 'q2Other') || typeof input.q2Other !== 'string' || input.q2Other.length > 60) return null;
+    if (safe.q2.indexOf('其他') === -1 && input.q2Other !== '') return null;
+    safe.q2Other = input.q2Other;
+    return safe;
+  }
+
+  function chineseAnswerCommand(answers) {
+    var tokens = [];
+    CHINESE_RECORD_RULES.forEach(function (rule) {
+      var selected = rule.multi ? answers[rule.id] : [answers[rule.id]];
+      rule.values.forEach(function (value) {
+        if (selected.indexOf(value) !== -1 && Object.prototype.hasOwnProperty.call(rule.tokens, value)) tokens.push(rule.tokens[value]);
+      });
+    });
+    return tokens.length ? 'FWV2 ' + tokens.join(' ') : '';
+  }
+
+  function chineseOtherDisplay(text) {
+    var clean = text.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, ' ').replace(/\s+/g, ' ').trim();
+    // 補充文字不能被誤認為另一題的中文關鍵字。
+    clean = clean.replace(/(地區|身份|年齡|主要需求|感興趣|參與方式|方便時段)：/g, '$1・');
+    var reserved = ['FWV2'];
+    CHINESE_RECORD_RULES.forEach(function (rule) { Object.keys(rule.tokens).forEach(function (value) { reserved.push(rule.tokens[value]); }); });
+    reserved.forEach(function (token) {
+      clean = clean.replace(new RegExp(token, 'gi'), function (word) {
+        return word.replace(/[A-Za-z0-9_]/g, function (letter) { return String.fromCharCode(letter.charCodeAt(0) + 65248); });
+      });
+    });
+    return clean;
+  }
+
+  function formatChineseAnswers(answers) {
+    var lines = [CHINESE_RECORD_TITLE];
+    CHINESE_RECORD_RULES.forEach(function (rule) {
+      var answer = answers[rule.id];
+      if (answer === undefined) return;
+      var selected = rule.multi ? answer : [answer];
+      rule.values.forEach(function (value) { if (selected.indexOf(value) !== -1) lines.push(rule.label + '：' + value); });
+      if (rule.id === 'q2' && selected.indexOf('其他') !== -1 && answers.q2Other) lines.push('其他身份補充：' + chineseOtherDisplay(answers.q2Other));
+    });
+    return lines.join('\n');
+  }
+
+  function formatChineseCommand(command) {
+    if (typeof command !== 'string' || !/^FWV2 [A-Z_]+(?: [A-Z_]+)*$/.test(command)) return null;
+    var tokens = command.slice(5).split(' '), seen = Object.create(null), partial = {}, matched = 0;
+    for (var i = 0; i < tokens.length; i++) { if (seen[tokens[i]]) return null; seen[tokens[i]] = true; }
+    CHINESE_RECORD_RULES.forEach(function (rule) {
+      var selected = rule.values.filter(function (value) { if (seen[rule.tokens[value]]) { matched++; return true; } return false; });
+      if (selected.length) partial[rule.id] = selected;
+    });
+    if (matched !== tokens.length) return null;
+    var lines = [CHINESE_RECORD_TITLE];
+    CHINESE_RECORD_RULES.forEach(function (rule) { (partial[rule.id] || []).forEach(function (value) { lines.push(rule.label + '：' + value); }); });
+    return lines.join('\n');
+  }
+
     function validateMessages(messages) {
       if (!Array.isArray(messages) || messages.length < 1 || messages.length > 5) return null;
       var safe = [];
@@ -307,6 +392,21 @@
       var messages = validateMessages(data.messages);
       if (!messages) {
         sendResult(data.requestId, data.submissionId, 'failed', safeError('send', 'INVALID_MESSAGES', '回傳指令格式不正確。'));
+        return;
+      }
+      if (Object.prototype.hasOwnProperty.call(data, 'surveyAnswers')) {
+        var answers = normaliseChineseAnswers(data.surveyAnswers);
+        if (!answers || messages.length !== 1 || messages[0].text !== chineseAnswerCommand(answers)) {
+          sendResult(data.requestId, data.submissionId, 'failed', safeError('send', 'INVALID_ANSWERS', '作答紀錄與分類資料不一致。'));
+          return;
+        }
+        messages = [{ type: 'text', text: formatChineseAnswers(answers) }];
+      } else {
+        // 尚未更新的問卷仍能回傳四類中文紀錄，不在聊天室顯示代碼。
+        messages = messages.map(function (message) { return { type: 'text', text: formatChineseCommand(message.text) }; });
+      }
+      if (messages.some(function (message) { return !message.text || message.text.length > 5000; })) {
+        sendResult(data.requestId, data.submissionId, 'failed', safeError('send', 'INVALID_ANSWERS', '中文作答紀錄格式不正確。'));
         return;
       }
       var fingerprint = JSON.stringify(messages);
