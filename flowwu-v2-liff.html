@@ -46,15 +46,7 @@
     var SEND_TIMEOUT_MS = 8000;
     var FRAME_READY_TIMEOUT_MS = 20000;
     var MAX_SEND_RECORDS = 30;
-    var VERSION = 1;
-    var ALLOWED_TOKENS = (
-      'REGION_TP REGION_TY REGION_NORTH REGION_CENTRAL REGION_SOUTH REGION_EAST REGION_OTHER ' +
-      'ID_PUBLIC ID_FAMILY ID_CARE ID_EDU ID_SECOND ID_OTHER ' +
-      'NEED_BRAINAGE NEED_COURSE NEED_COACH NEED_EVENT NEED_FAMILY NEED_COOP ' +
-      'INT_COG INT_BRAIN INT_FAMILY INT_COACH INT_EVENT'
-    ).split(' ');
-    var allowedTokens = Object.create(null);
-    ALLOWED_TOKENS.forEach(function (token) { allowedTokens[token] = true; });
+    var VERSION = 1;   // 橋接訊息格式版本;作答內容協定版本為 protocol: 2(見 buildChatMessages)
 
     var statusBox = document.getElementById('status');
     var statusText = document.getElementById('statusText');
@@ -274,129 +266,470 @@
     }
 
 
-  // 中文作答紀錄只採用已核對的問卷選項；分類代碼僅在入口內部驗證。
-  var CHINESE_RECORD_TITLE = '我的會員問卷紀錄';
-  // 聊天室訊息的開頭、分隔線與結尾文字(只改文字時改這裡即可,請勿在這裡寫入「欄位：選項」格式)
-  var CHINESE_RECORD_INTRO = [
-    '感謝您花 30 秒完成問卷 🌿',
-    '以下是您的會員問卷填答紀錄，方便您再次確認自己的需求與選擇。'
-  ];
-  var CHINESE_RECORD_DIVIDER = '━━━━━━━━━━';
-  var CHINESE_RECORD_CLOSING = '期待陪您一起動腦、動身，巫奉約身腦齡活關心您身心靈健康。';
-  // 這三題沒有標籤規則,合併成同一行顯示(例如「參與方式：實體課程、講座」)
-  var CHINESE_RECORD_COMPACT = { q3: true, q6: true, q7: true };
-  var CHINESE_RECORD_RULES = [{"id":"q1","label":"地區","multi":false,"values":["雙北","桃園","北部其他","中部","南部","東部","離島／海外"],"tokens":{"雙北":"REGION_TP","桃園":"REGION_TY","北部其他":"REGION_NORTH","中部":"REGION_CENTRAL","南部":"REGION_SOUTH","東部":"REGION_EAST","離島／海外":"REGION_OTHER"}},{"id":"q2","label":"身份","multi":true,"values":["我自己想維持與提升腦健康","我關心或陪伴家人的腦健康","我是照護／長照／健康相關專業人員","我從事教育、活動帶領或社區服務","我正在規劃退休後或第二職涯","其他"],"tokens":{"我自己想維持與提升腦健康":"ID_PUBLIC","我關心或陪伴家人的腦健康":"ID_FAMILY","我是照護／長照／健康相關專業人員":"ID_CARE","我從事教育、活動帶領或社區服務":"ID_EDU","我正在規劃退休後或第二職涯":"ID_SECOND","其他":"ID_OTHER"}},{"id":"q3","label":"年齡","multi":false,"values":["45歲以下","46～55歲","56～65歲","66～75歲","76歲以上"],"tokens":{}},{"id":"q4","label":"主要需求","multi":false,"values":["我的腦年齡","身腦齡活課程","身腦齡活教練培訓","講座與活動","家人的腦健康","企業／社區／機構合作"],"tokens":{"我的腦年齡":"NEED_BRAINAGE","身腦齡活課程":"NEED_COURSE","身腦齡活教練培訓":"NEED_COACH","講座與活動":"NEED_EVENT","家人的腦健康":"NEED_FAMILY","企業／社區／機構合作":"NEED_COOP"}},{"id":"q5","label":"感興趣","multi":true,"values":["認知訓練","腦健康知識","家屬照護","教練培訓","講座活動"],"tokens":{"認知訓練":"INT_COG","腦健康知識":"INT_BRAIN","家屬照護":"INT_FAMILY","教練培訓":"INT_COACH","講座活動":"INT_EVENT"}},{"id":"q6","label":"參與方式","multi":true,"values":["實體課程","講座","揪團活動","一對一諮詢","線上資訊／影音"],"tokens":{}},{"id":"q7","label":"方便時段","multi":true,"values":["平日白天","平日晚上","週末白天","週末晚上","時間都可以"],"tokens":{}}];
 
-  function normaliseChineseAnswers(input) {
-    if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
-    var keys = Object.keys(input);
-    if (keys.length !== 8 || keys.some(function (key) { return !/^(q[1-7]|q2Other)$/.test(key); })) return null;
-    var safe = {};
-    for (var i = 0; i < CHINESE_RECORD_RULES.length; i++) {
-      var rule = CHINESE_RECORD_RULES[i];
-      if (!Object.prototype.hasOwnProperty.call(input, rule.id)) return null;
-      var answer = input[rule.id];
-      if (rule.multi) {
-        if (!Array.isArray(answer) || !answer.length || answer.length > rule.values.length) return null;
-        var seen = Object.create(null);
-        for (var j = 0; j < answer.length; j++) {
-          if (typeof answer[j] !== 'string' || rule.values.indexOf(answer[j]) === -1 || seen[answer[j]]) return null;
-          seen[answer[j]] = true;
-        }
-        if (rule.id === 'q7' && answer.indexOf('時間都可以') !== -1 && answer.length !== 1) return null;
-        safe[rule.id] = rule.values.filter(function (value) { return !!seen[value]; });
-      } else {
-        if (typeof answer !== 'string' || rule.values.indexOf(answer) === -1) return null;
-        safe[rule.id] = answer;
-      }
+    // ============================================================
+    //  共用核心與問卷設定(與 Apps Script 後端、問卷頁是同一份,由建置程式貼入,請勿手改)
+    //  入口頁只信任「引擎重播過的答案」,聊天室訊息一律由這裡依答案重新產生。
+    // ============================================================
+//@@BEGIN SurveyCore
+/*
+ * FlowWu｜新會員分流問卷 v2 －－ 共用核心 (survey-core.js)
+ * 同一份程式同時用在三個地方（由建置程式自動貼入，請勿各自手改）：
+ *   1. Apps Script 後端 (SurveyCore.gs)   ：重播驗證答案、產生 Sheet 欄位與標籤
+ *   2. Apps Script 問卷頁 (Script.html)   ：畫面流程、完成頁紀錄
+ *   3. GitHub 入口頁 (flowwu-v2-liff.html)：重播驗證答案、產生聊天室訊息
+ *
+ * 第一部分「引擎」為規格 survey-engine.js 的原樣內容（邏輯未改寫）。
+ * 第二部分是驗證、訊息與資料欄位的工具函式，全部以「重播」為基礎：
+ * 不信任任何外來資料，一律由引擎依設定檔從第一題重新走一遍，路徑與答案都符合才接受。
+ */
+var SurveyCore = (function () {
+  "use strict";
+
+  // =====================================================================
+  //  第一部分：引擎（規格 survey-engine.js 原樣）
+  // =====================================================================
+  function createEngine(config) {
+    const FINISH = config.settings.finish || "FINISH";
+    const byId = {};
+    config.questions.forEach((q) => { byId[q.id] = q; });
+
+    // answers：每題最後一次的答案（單選＝選項 id；複選＝選項 id 陣列）
+    // history：實際走過、已作答的題目 id（依順序）＝最後送出的路徑
+    // pending：目前這題複選中、尚未按「沒有了」的已選項目
+    const state = { answers: {}, history: [], current: null, pending: [] };
+
+    // 只採計 history 內的答案：回上一題改答後，舊分支的答案不會影響判斷
+    function values(qid) {
+      if (!state.history.includes(qid)) return [];
+      const a = state.answers[qid];
+      return a == null ? [] : [].concat(a);
     }
-    if (!Object.prototype.hasOwnProperty.call(input, 'q2Other') || typeof input.q2Other !== 'string' || input.q2Other.length > 60) return null;
-    if (safe.q2.indexOf('其他') === -1 && input.q2Other !== '') return null;
-    safe.q2Other = input.q2Other;
-    return safe;
+
+    // 條件：{q,in} 單選答案在清單內／複選任一已選在清單內；{q,notIn}；{all:[…]}；{any:[…]}
+    // 尚未作答的題目，條件一律不成立
+    function evalCond(c) {
+      if (!c) return true;
+      if (c.all) return c.all.every(evalCond);
+      if (c.any) return c.any.some(evalCond);
+      const v = values(c.q);
+      if (c.in) return v.some((x) => c.in.includes(x));
+      if (c.notIn) return v.length > 0 && !v.some((x) => c.notIn.includes(x));
+      return false;
+    }
+
+    function resolveNext(q) {
+      if (typeof q.next === "string") return q.next;
+      for (const rule of q.next) {
+        if (!rule.if || evalCond(rule.if)) return rule.goto;
+      }
+      return FINISH;
+    }
+
+    // 從 id 往後找第一個要顯示的題目：showIf 不成立就跳過
+    function settle(id) {
+      let guard = 0;
+      while (id !== FINISH) {
+        if (guard++ > 200) throw new Error("routing loop at " + id);
+        const q = byId[id];
+        if (!q) throw new Error("unknown question: " + id);
+        if (q.showIf && !evalCond(q.showIf)) { id = resolveNext(q); continue; }
+        return id;
+      }
+      return FINISH;
+    }
+
+    function enter(id) {
+      state.current = settle(id);
+      const q = byId[state.current];
+      // 再次來到複選題（例如回上一題）時，帶入先前的選擇，直接顯示追問畫面
+      state.pending = q && q.type === "multi" ? [].concat(state.answers[q.id] || []) : [];
+      return state.current;
+    }
+
+    function commit(q) {
+      state.history.push(q.id);
+      return enter(resolveNext(q));
+    }
+
+    function currentQuestion() { return byId[state.current] || null; }
+
+    function isExclusive(q, optionId) {
+      const o = q.options.find((x) => x.id === optionId);
+      return !!(o && o.exclusive);
+    }
+
+    function start() {
+      state.answers = {};
+      state.history = [];
+      state.pending = [];
+      return enter(config.settings.start);
+    }
+
+    // 點選項目：單選 → 直接下一題；複選 → 加入已選，留在本題顯示「還有其他嗎？」
+    function pick(optionId) {
+      const q = currentQuestion();
+      if (!q) return state.current;
+      const opt = q.options.find((o) => o.id === optionId);
+      if (!opt) throw new Error("unknown option " + optionId + " in " + q.id);
+
+      if (q.type === "single") {
+        state.answers[q.id] = optionId;
+        return commit(q);
+      }
+      if (opt.exclusive) {               // 獨佔選項（如「時間都可以」）：只選它並直接下一題
+        state.pending = [optionId];
+        state.answers[q.id] = [optionId];
+        return commit(q);
+      }
+      state.pending = state.pending.filter((id) => !isExclusive(q, id));
+      if (!state.pending.includes(optionId)) state.pending.push(optionId);
+      state.answers[q.id] = [].concat(state.pending);
+      if (remaining().length === 0) return commit(q);   // 全部選完 → 自動下一題
+      return state.current;
+    }
+
+    // 追問畫面的剩餘選項：不含已選、不含獨佔選項
+    function remaining() {
+      const q = currentQuestion();
+      if (!q || q.type !== "multi") return [];
+      return q.options.filter((o) => !o.exclusive && !state.pending.includes(o.id));
+    }
+
+    // 移除已選標籤；移到 0 項時自動回到第一輪
+    function unpick(optionId) {
+      const q = currentQuestion();
+      if (!q || q.type !== "multi") return state.current;
+      state.pending = state.pending.filter((id) => id !== optionId);
+      state.answers[q.id] = [].concat(state.pending);
+      return state.current;
+    }
+
+    // 「沒有了，下一題」
+    function done() {
+      const q = currentQuestion();
+      if (!q || q.type !== "multi" || state.pending.length === 0) return state.current;
+      state.answers[q.id] = [].concat(state.pending);
+      return commit(q);
+    }
+
+    // 上一題：回到前一個已作答題目，保留它的答案供修改
+    function back() {
+      const prev = state.history.pop();
+      if (!prev) return state.current;
+      state.current = prev;
+      const q = byId[prev];
+      state.pending = q.type === "multi" ? [].concat(state.answers[prev] || []) : [];
+      return state.current;
+    }
+
+    // 畫面狀態
+    function phase() {
+      const q = currentQuestion();
+      if (!q) return "finish";
+      if (q.type === "single") return "single";
+      return state.pending.length ? "multi-more" : "multi-first";
+    }
+
+    // 預估總題數＝已答題數＋從目前題目往後模擬（未作答條件視為不成立），每答一題重算
+    function projectedTotal() {
+      let n = state.history.length;
+      let id = state.current;
+      let guard = 0;
+      while (id && id !== FINISH && guard++ < 200) {
+        const q = byId[id];
+        if (!q.showIf || evalCond(q.showIf)) n++;
+        id = resolveNext(q);
+      }
+      return n;
+    }
+
+    function optionOf(q, optionId) {
+      return q.options.find((x) => x.id === optionId) || { id: optionId, label: optionId };
+    }
+
+    // 送出用結果：只含實際路徑上的題目
+    function result() {
+      const path = [].concat(state.history);
+      const answers = {};
+      path.forEach((id) => { answers[id] = state.answers[id]; });
+      const tags = [];
+      const lines = [];
+      path.forEach((id) => {
+        const q = byId[id];
+        const opts = [].concat(answers[id]).map((x) => optionOf(q, x));
+        opts.forEach((o) => tags.push((q.tag || q.short) + "_" + (o.tag || o.label)));
+        lines.push(q.short + "：" + opts.map((o) => o.label).join("、"));
+      });
+      const segment = answers.need || null;
+      const closings = (config.finish && config.finish.closingBySegment) || {};
+      const closing = closings[segment] || (config.finish && config.finish.closingDefault) || "";
+      // 完成頁提示卡（例如：想要教練培訓 → 請在官方 LINE 預約），依 showIf 決定是否出現
+      const notices = ((config.finish && config.finish.notices) || []).filter((n) => evalCond(n.showIf));
+      return { version: config.meta.version, segment, path, answers, tags, lines, closing, notices };
+    }
+
+    return {
+      start, pick, unpick, done, back, phase, remaining, projectedTotal, result,
+      currentQuestion, evalCond, state, byId, FINISH,
+    };
   }
 
-  function chineseAnswerCommand(answers) {
-    var tokens = [];
-    CHINESE_RECORD_RULES.forEach(function (rule) {
-      var selected = rule.multi ? answers[rule.id] : [answers[rule.id]];
-      rule.values.forEach(function (value) {
-        if (selected.indexOf(value) !== -1 && Object.prototype.hasOwnProperty.call(rule.tokens, value)) tokens.push(rule.tokens[value]);
+  // =====================================================================
+  //  第二部分：重播驗證、聊天室訊息、Sheet 欄位
+  // =====================================================================
+
+  function fail(code, detail) { return { ok: false, code: code, detail: detail || '' }; }
+
+  function hasOwn(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+
+  /** 清理使用者自由輸入文字：移除控制字元／不可見方向字元、合併空白、限制長度。 */
+  function cleanText(value, maxLength) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+      .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
+      .replace(/[​-‏‪-‮⁠-⁯⁦-⁩﻿]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, maxLength);
+  }
+
+  /**
+   * 重播驗證：把外來資料 {path, answers, otherText} 交給引擎從第一題重走一遍。
+   * 只有「路徑、題型、選項、獨佔規則」全部吻合才算通過，回傳引擎算出的標準結果。
+   * （路徑上沒有的題目不可帶答案；複選一律依設定檔順序重播，所以結果順序固定。）
+   */
+  function replay(config, submission) {
+    if (!submission || typeof submission !== 'object' || Array.isArray(submission)) return fail('FORMAT');
+    var path = submission.path;
+    var answers = submission.answers;
+    if (!Array.isArray(path) || path.length < 1 || path.length > 40) return fail('FORMAT', 'path');
+    if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return fail('FORMAT', 'answers');
+
+    var engine = createEngine(config);
+    engine.start();
+    var i = 0;
+    while (engine.phase() !== 'finish') {
+      if (i >= path.length) return fail('PATH', 'too short');
+      var q = engine.currentQuestion();
+      if (path[i] !== q.id) return fail('PATH', q.id);
+      if (!hasOwn(answers, q.id)) return fail('ANSWER', q.id);
+      var a = answers[q.id];
+      var ids = q.options.map(function (o) { return o.id; });
+      if (q.type === 'single') {
+        if (typeof a !== 'string' || ids.indexOf(a) === -1) return fail('ANSWER', q.id);
+        engine.pick(a);
+      } else {
+        if (!Array.isArray(a) || a.length < 1 || a.length > ids.length) return fail('ANSWER', q.id);
+        var seen = {};
+        for (var j = 0; j < a.length; j++) {
+          if (typeof a[j] !== 'string' || ids.indexOf(a[j]) === -1 || seen[a[j]]) return fail('ANSWER', q.id);
+          seen[a[j]] = true;
+        }
+        var exclusiveId = null;
+        q.options.forEach(function (o) { if (o.exclusive && seen[o.id]) exclusiveId = o.id; });
+        if (exclusiveId && a.length !== 1) return fail('ANSWER', q.id);
+        // 依設定檔的選項順序重播（排除順序差異）；全選完會由引擎自動前進，之後不能再點
+        var ordered = ids.filter(function (id) { return seen[id]; });
+        for (var k = 0; k < ordered.length && engine.currentQuestion() === q; k++) engine.pick(ordered[k]);
+        if (engine.currentQuestion() === q) engine.done();
+      }
+      i++;
+    }
+    if (i !== path.length) return fail('PATH', 'too long');
+    var extra = Object.keys(answers).filter(function (k) { return path.indexOf(k) === -1; });
+    if (extra.length) return fail('ANSWER', 'unexpected ' + extra[0]);
+
+    // 「其他」身份說明：只有選了該選項才接受
+    var ot = (config.settings && config.settings.otherText) || null;
+    var otherText = '';
+    if (ot) {
+      var chosen = engine.state.answers[ot.question];
+      var picked = path.indexOf(ot.question) !== -1 && chosen && [].concat(chosen).indexOf(ot.option) !== -1;
+      var raw = submission.otherText;
+      if (raw !== undefined && raw !== null && typeof raw !== 'string') return fail('OTHER');
+      if (picked) otherText = cleanText(raw, ot.maxLength || 60);
+      else if (raw) return fail('OTHER', 'not selected');
+    }
+    return { ok: true, result: engine.result(), otherText: otherText, engine: engine };
+  }
+
+  function questionMap(config) {
+    var m = {};
+    config.questions.forEach(function (q) { m[q.id] = q; });
+    return m;
+  }
+
+  function labelOf(q, optionId) {
+    var o = q.options.filter(function (x) { return x.id === optionId; })[0];
+    return o ? o.label : optionId;
+  }
+
+  /** 每題「欄位名稱」(short)：自由輸入文字裡若出現「欄位名稱：」會被改成「欄位名稱・」，避免偽造關鍵字。 */
+  function neutralizeFreeText(config, text) {
+    var names = [];
+    config.questions.forEach(function (q) { if (names.indexOf(q.short) === -1) names.push(q.short); });
+    names.push(config.finish.recordTitle);
+    names.push('感興趣');   // 舊版「感興趣」欄位名稱（Chatisfy 仍可能保留該規則，一併防護）
+    var out = text;
+    names.forEach(function (n) {
+      out = out.split(n + '：').join(n + '・').split(n + ':').join(n + '・');
+    });
+    // 標題關鍵字本身也不讓使用者重複輸入
+    out = out.split(config.finish.recordTitle).join(config.finish.recordTitle.split('').join(' '));
+    return out;
+  }
+
+  /**
+   * 作答內容各行（不含問候語與結尾）。
+   * 會被 Chatisfy 貼標籤的題目（lineMode: perOption，如身份）每個選項各占一行；
+   * 其他題目同一題合併成一行，用「、」串起來。
+   */
+  function buildRecordLines(config, result, otherText) {
+    var qm = questionMap(config);
+    var lines = [];
+    var ot = (config.settings && config.settings.otherText) || null;
+    result.path.forEach(function (id) {
+      var q = qm[id];
+      var ids = [].concat(result.answers[id]);
+      var labels = ids.map(function (x) { return labelOf(q, x); });
+      if (q.lineMode === 'perOption') {
+        labels.forEach(function (l) { lines.push(q.short + '：' + l); });
+      } else {
+        lines.push(q.short + '：' + labels.join('、'));
+      }
+      if (ot && ot.question === id && ids.indexOf(ot.option) !== -1 && otherText) {
+        lines.push('其他身份補充：' + neutralizeFreeText(config, otherText));
+      }
+    });
+    return lines;
+  }
+
+  /** 完整聊天室訊息：問候 → 標題 → 分隔線 → 作答 → 分隔線 → 收尾句 → 提示 → 固定結尾。 */
+  function buildChatMessage(config, result, otherText) {
+    var f = config.finish;
+    var out = [].concat(f.intro, ['📋 ' + f.recordTitle, f.divider], buildRecordLines(config, result, otherText), [f.divider]);
+    if (result.closing) out.push(result.closing);
+    result.notices.forEach(function (n) { if (n.line) out.push(n.line); });
+    out.push(f.finalLine);
+    return out.join('\n');
+  }
+
+  /** V2 標籤字串（寫入 Sheet 的「V2標籤」欄）：V2｜題目標籤｜選項標籤。 */
+  function buildTags(config, result) {
+    var qm = questionMap(config);
+    var tags = [];
+    result.path.forEach(function (id) {
+      var q = qm[id];
+      [].concat(result.answers[id]).forEach(function (x) {
+        var o = q.options.filter(function (y) { return y.id === x; })[0];
+        tags.push('V2｜' + (q.tag || q.short) + '｜' + ((o && o.tag) || (o && o.label) || x));
       });
     });
-    return tokens.length ? 'FWV2 ' + tokens.join(' ') : '';
+    return tags;
   }
 
-  function chineseOtherDisplay(text) {
-    var clean = text.replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁯﻿]/g, ' ').replace(/\s+/g, ' ').trim();
-    // 補充文字不能被誤認為另一題的中文關鍵字。
-    clean = clean.replace(/(地區|身份|年齡|主要需求|感興趣|參與方式|方便時段)：/g, '$1・');
-    var reserved = ['FWV2'];
-    CHINESE_RECORD_RULES.forEach(function (rule) { Object.keys(rule.tokens).forEach(function (value) { reserved.push(rule.tokens[value]); }); });
-    reserved.forEach(function (token) {
-      clean = clean.replace(new RegExp(token, 'gi'), function (word) {
-        return word.replace(/[A-Za-z0-9_]/g, function (letter) { return String.fromCharCode(letter.charCodeAt(0) + 65248); });
-      });
+  /** 某題在試算表中用「、」串起來的選項文字。 */
+  function joinedLabels(config, result, qid) {
+    if (result.path.indexOf(qid) === -1) return '';
+    var q = questionMap(config)[qid];
+    return [].concat(result.answers[qid]).map(function (x) { return labelOf(q, x); }).join('、');
+  }
+
+  /**
+   * 寫入 Google Sheet 的欄位（以「標題名稱」為鍵）。
+   * 舊有欄位（地區、身份…）沿用；新增欄位放在表格最右邊。
+   */
+  function buildSheetFields(config, result, otherText) {
+    var qm = questionMap(config);
+    var branchLines = [];
+    result.path.forEach(function (id) {
+      var q = qm[id];
+      if (q.branch && q.branch !== 'X') branchLines.push(q.short + '：' + joinedLabels(config, result, id));
     });
-    return clean;
-  }
-
-  // 把答案行包上開頭問候、標題、分隔線與結尾,組成完整聊天室訊息。
-  function composeChineseMessage(bodyLines) {
-    return CHINESE_RECORD_INTRO
-      .concat(['📋 ' + CHINESE_RECORD_TITLE, CHINESE_RECORD_DIVIDER], bodyLines, [CHINESE_RECORD_DIVIDER, CHINESE_RECORD_CLOSING])
-      .join('\n');
-  }
-
-  function formatChineseAnswers(answers) {
-    var body = [];
-    CHINESE_RECORD_RULES.forEach(function (rule) {
-      var answer = answers[rule.id];
-      if (answer === undefined) return;
-      var selected = rule.multi ? answer : [answer];
-      var picked = rule.values.filter(function (value) { return selected.indexOf(value) !== -1; });
-      if (CHINESE_RECORD_COMPACT[rule.id]) {
-        if (picked.length) body.push(rule.label + '：' + picked.join('、'));
-      } else {
-        picked.forEach(function (value) { body.push(rule.label + '：' + value); });
-      }
-      if (rule.id === 'q2' && selected.indexOf('其他') !== -1 && answers.q2Other) body.push('其他身份補充：' + chineseOtherDisplay(answers.q2Other));
-    });
-    return composeChineseMessage(body);
-  }
-
-  function formatChineseCommand(command) {
-    if (typeof command !== 'string' || !/^FWV2 [A-Z_]+(?: [A-Z_]+)*$/.test(command)) return null;
-    var tokens = command.slice(5).split(' '), seen = Object.create(null), partial = {}, matched = 0;
-    for (var i = 0; i < tokens.length; i++) { if (seen[tokens[i]]) return null; seen[tokens[i]] = true; }
-    CHINESE_RECORD_RULES.forEach(function (rule) {
-      var selected = rule.values.filter(function (value) { if (seen[rule.tokens[value]]) { matched++; return true; } return false; });
-      if (selected.length) partial[rule.id] = selected;
-    });
-    if (matched !== tokens.length) return null;
-    var body = [];
-    CHINESE_RECORD_RULES.forEach(function (rule) { (partial[rule.id] || []).forEach(function (value) { body.push(rule.label + '：' + value); }); });
-    return composeChineseMessage(body);
-  }
-
-    function validateMessages(messages) {
-      if (!Array.isArray(messages) || messages.length < 1 || messages.length > 5) return null;
-      var safe = [];
-      for (var i = 0; i < messages.length; i++) {
-        var message = messages[i];
-        if (!message || message.type !== 'text' || typeof message.text !== 'string' ||
-            message.text.length > 600 || !/^FWV2 [A-Z_]+(?: [A-Z_]+)*$/.test(message.text)) return null;
-        var tokens = message.text.slice(5).split(' ');
-        if (tokens.length < 1 || tokens.length > ALLOWED_TOKENS.length) return null;
-        var seen = Object.create(null);
-        for (var j = 0; j < tokens.length; j++) {
-          if (!allowedTokens[tokens[j]] || seen[tokens[j]]) return null;
-          seen[tokens[j]] = true;
-        }
-        safe.push({ type: 'text', text: message.text });
-      }
-      return safe;
+    var segment = '';
+    if (result.segment) {
+      var needQ = qm.need;
+      segment = labelOf(needQ, result.segment);
     }
+    return {
+      '地區': joinedLabels(config, result, 'region'),
+      '身份': joinedLabels(config, result, 'identity'),
+      '其他身份說明': otherText || '',
+      '年齡': joinedLabels(config, result, 'age'),
+      '主要需求': joinedLabels(config, result, 'need'),
+      '興趣': '',
+      '參與方式': joinedLabels(config, result, 'mode'),
+      '方便時段': joinedLabels(config, result, 'time'),
+      'V2標籤': buildTags(config, result).join(', '),
+      '流程版本': String(config.meta.version),
+      '分支': segment,
+      '分支題作答': branchLines.join('；'),
+      '教練培訓興趣': joinedLabels(config, result, 'X1'),
+      '課程意願': joinedLabels(config, result, 'course_intent'),
+      '每堂可接受費用': joinedLabels(config, result, 'price'),
+      '作答路徑': result.path.join('>'),
+      '作答JSON': JSON.stringify(result.answers)
+    };
+  }
+
+  /** 新增欄位（舊表沒有時，由後端自動補在最右邊）。 */
+  var NEW_SHEET_HEADERS = ['流程版本', '分支', '分支題作答', '教練培訓興趣', '課程意願', '每堂可接受費用', '作答路徑', '作答JSON'];
+
+  /** 設定檔自我檢查：下一題指向的題目都存在、沒有孤兒題、每個選項 id 不重複。回傳問題清單。 */
+  function lintConfig(config) {
+    var problems = [];
+    var qm = questionMap(config);
+    var ids = config.questions.map(function (q) { return q.id; });
+    ids.forEach(function (id, i) { if (ids.indexOf(id) !== i) problems.push('題目 id 重複：' + id); });
+    var FIN = config.settings.finish || 'FINISH';
+    function target(t, from) { if (t !== FIN && !qm[t]) problems.push(from + ' 指向不存在的題目 ' + t); }
+    if (!qm[config.settings.start]) problems.push('start 不存在');
+    var reached = {};
+    config.questions.forEach(function (q) {
+      var oids = q.options.map(function (o) { return o.id; });
+      oids.forEach(function (id, i) { if (oids.indexOf(id) !== i) problems.push(q.id + ' 選項 id 重複：' + id); });
+      if (typeof q.next === 'string') { target(q.next, q.id); reached[q.next] = true; }
+      else (q.next || []).forEach(function (r) { target(r.goto, q.id); reached[r.goto] = true; });
+    });
+    reached[config.settings.start] = true;
+    ids.forEach(function (id) { if (!reached[id]) problems.push('孤兒題（沒有任何題目指向它）：' + id); });
+    return problems;
+  }
+
+  return {
+    createEngine: createEngine,
+    replay: replay,
+    buildRecordLines: buildRecordLines,
+    buildChatMessage: buildChatMessage,
+    buildTags: buildTags,
+    buildSheetFields: buildSheetFields,
+    NEW_SHEET_HEADERS: NEW_SHEET_HEADERS,
+    cleanText: cleanText,
+    lintConfig: lintConfig
+  };
+})();
+
+//@@END SurveyCore
+
+    //@@BEGIN SurveyConfig
+    var SURVEY_CONFIG = {"meta":{"name":"巫奉約身腦齡活｜會員問卷","version":"2.0","updated":"2026-10-11"},"settings":{"start":"region","finish":"FINISH","autoAdvanceMs":250,"singleHint":"點選後直接進入下一題","multi":{"firstHint":"可複選，先點一項","moreTitle":"還有其他嗎？","moreHint":"可再點一項；都選好了就按「沒有了」","doneLabel":"沒有了，下一題","donePosition":"first"},"otherText":{"question":"identity","option":"other","label":"請簡單說明您的身份（選填）","placeholder":"可以不填","maxLength":60}},"questions":[{"id":"region","short":"地區","tag":"地區","type":"single","keepExisting":true,"title":"您目前主要居住在哪個地區？","options":[{"id":"tp","icon":"🏙️","label":"雙北","desc":"台北市、新北市","tag":"雙北"},{"id":"ty","icon":"✈️","label":"桃園","desc":"桃園市","tag":"桃園"},{"id":"north","icon":"⛰️","label":"北部其他","desc":"基隆、新竹、苗栗","tag":"北部其他"},{"id":"central","icon":"🌾","label":"中部","desc":"台中、彰化、南投、雲林","tag":"中部"},{"id":"south","icon":"☀️","label":"南部","desc":"嘉義、台南、高雄、屏東","tag":"南部"},{"id":"east","icon":"🌊","label":"東部","desc":"宜蘭、花蓮、台東","tag":"東部"},{"id":"offshore","icon":"🏝️","label":"離島／海外","desc":"澎湖、金門、馬祖或海外","tag":"離島海外"}],"next":"identity","intro":"只要幾個小問題，約 1 分鐘就能完成，不需要輸入姓名或電話。"},{"id":"identity","short":"身份","tag":"身份","type":"multi","keepExisting":true,"lineMode":"perOption","title":"請問您目前比較符合哪些身份？","note":"除了記錄身份，也決定是否加問 X1（教練培訓興趣）","options":[{"id":"self","icon":"🌱","label":"我自己想維持與提升腦健康","tag":"一般民眾"},{"id":"family","icon":"👨‍👩‍👧","label":"我關心或陪伴家人的腦健康","tag":"家屬照護者"},{"id":"care_pro","icon":"🩺","label":"我是照護／長照／健康相關專業人員","tag":"照護專業"},{"id":"educator","icon":"🎓","label":"我從事教育、活動帶領或社區服務","tag":"教育活動帶領者"},{"id":"second_career","icon":"🧭","label":"我正在規劃退休後或第二職涯","tag":"第二職涯"},{"id":"other","icon":"✏️","label":"其他","tag":"其他"}],"next":"age"},{"id":"age","short":"年齡","type":"single","keepExisting":true,"title":"請問您的年齡範圍是？","options":[{"id":"u45","icon":"🌱","label":"45歲以下"},{"id":"a46_55","icon":"🌿","label":"46～55歲"},{"id":"a56_65","icon":"🌳","label":"56～65歲"},{"id":"a66_75","icon":"🌲","label":"66～75歲"},{"id":"a76p","icon":"🍂","label":"76歲以上"}],"next":"need"},{"id":"need","short":"主要需求","tag":"需求","type":"single","keepExisting":true,"title":"您現在最想了解或參與的是哪一項？","note":"分流題：依答案進入 A～F 分支；未來新增的選項走預設路線","options":[{"id":"brain_age","icon":"🧠","label":"我的腦年齡","tag":"腦年齡"},{"id":"course","icon":"📘","label":"身腦齡活課程","tag":"身腦齡活課程"},{"id":"coach","icon":"🏅","label":"身腦齡活教練培訓","tag":"教練培訓"},{"id":"events","icon":"🎤","label":"講座與活動","tag":"講座活動"},{"id":"family_health","icon":"👪","label":"家人的腦健康","tag":"家人腦健康"},{"id":"partner","icon":"🤝","label":"企業／社區／機構合作","tag":"合作邀約"}],"next":[{"if":{"q":"need","in":["brain_age"]},"goto":"A1"},{"if":{"q":"need","in":["course"]},"goto":"B1"},{"if":{"q":"need","in":["coach"]},"goto":"C1"},{"if":{"q":"need","in":["events"]},"goto":"D1"},{"if":{"q":"need","in":["family_health"]},"goto":"E1"},{"if":{"q":"need","in":["partner"]},"goto":"F1"},{"goto":"X1"}]},{"id":"A1","branch":"A","short":"想加強","type":"multi","title":"您最想加強哪些方面？","options":[{"id":"memory","icon":"🧩","label":"記憶力"},{"id":"focus","icon":"🎯","label":"專注力"},{"id":"reaction","icon":"⚡","label":"反應速度"},{"id":"mood","icon":"🌤️","label":"情緒與壓力"},{"id":"sleep","icon":"😴","label":"睡眠品質"},{"id":"balance","icon":"🧘","label":"體能與平衡"}],"next":"A2"},{"id":"A2","branch":"A","short":"腦年齡檢測","type":"single","title":"想進一步了解 MRI 腦年齡檢測嗎？","options":[{"id":"detail","icon":"🧠","label":"想了解檢測方式與費用","tag":"想了解"},{"id":"talk_first","icon":"🎤","label":"想先參加講座了解","tag":"先聽講座"},{"id":"not_now","icon":"🙂","label":"目前先不用","tag":"先不用"}],"next":"X1"},{"id":"B1","branch":"B","short":"課程對象","type":"single","title":"您是為誰了解身腦齡活課程？","options":[{"id":"me","icon":"🙋","label":"我自己"},{"id":"for_family","icon":"👵","label":"幫家人了解"},{"id":"together","icon":"👫","label":"我和家人一起上"}],"next":"B2"},{"id":"B2","branch":"B","short":"想了解班別","tag":"班別","type":"single","title":"比較想了解哪一種班？","options":[{"id":"regular","icon":"🌱","label":"身腦齡活班","desc":"預防保養、維持活力"},{"id":"reverse","icon":"🧩","label":"逆齡專班","desc":"加強記憶與專注"},{"id":"both","icon":"📘","label":"都想了解"}],"next":"X1"},{"id":"C1","branch":"C","short":"相關背景","tag":"教練背景","type":"multi","title":"您目前有哪些相關背景？","options":[{"id":"care","icon":"🤲","label":"照護／長照"},{"id":"medical","icon":"🩺","label":"醫療／復健"},{"id":"fitness","icon":"💪","label":"運動教練／體適能"},{"id":"edu","icon":"🎓","label":"教育／社區帶領"},{"id":"none","icon":"🌱","label":"沒有相關經驗","exclusive":true}],"next":"C2"},{"id":"C2","branch":"C","short":"教練規劃","type":"single","title":"取得教練資格後，您最想怎麼運用？","options":[{"id":"business","icon":"💼","label":"開課創業／斜槓收入","tag":"開課創業"},{"id":"at_work","icon":"🏥","label":"運用在現在的工作"},{"id":"family_self","icon":"🏡","label":"照顧家人與自己"},{"id":"explore","icon":"🔍","label":"先了解看看"}],"next":"C3"},{"id":"C3","branch":"C","short":"想了解的班別","tag":"教練班別","type":"single","title":"想了解哪一個教練培訓班？","note":"教練培訓為固定費用，本分支不問課程意願與價格；完成頁請對方回官方 LINE 預約","options":[{"id":"basic","icon":"🌱","label":"入門班","desc":"15,000 元"},{"id":"advanced","icon":"🏅","label":"進階班","desc":"65,000 元"},{"id":"unsure","icon":"💬","label":"還不確定，想先諮詢","tag":"想諮詢"}],"next":"mode"},{"id":"D1","branch":"D","short":"講座主題","type":"multi","title":"您對哪些講座主題有興趣？","options":[{"id":"prevention","icon":"🛡️","label":"失智預防"},{"id":"brain_training","icon":"🧩","label":"腦力訓練"},{"id":"movement","icon":"🤸","label":"運動與平衡"},{"id":"brain_age_test","icon":"🧠","label":"腦年齡與檢測"},{"id":"caregiving","icon":"💛","label":"家屬陪伴技巧"},{"id":"retirement","icon":"🧭","label":"退休生活規劃"}],"next":"D2"},{"id":"D2","branch":"D","short":"同行人數","tag":"同行","type":"single","title":"通常會幾個人一起參加？","options":[{"id":"solo","icon":"🙋","label":"自己參加"},{"id":"small","icon":"👫","label":"2～3 人"},{"id":"group","icon":"👥","label":"4 人以上（可揪團）","tag":"揪團"}],"next":"X1"},{"id":"E1","branch":"E","short":"關心的家人","tag":"家人","type":"single","title":"您關心的家人是？","options":[{"id":"parent","icon":"👵","label":"父母／長輩"},{"id":"spouse","icon":"💑","label":"配偶／伴侶"},{"id":"other_family","icon":"👨‍👩‍👧","label":"其他家人"}],"next":"E2"},{"id":"E2","branch":"E","short":"家人年齡","type":"single","title":"這位家人的年齡是？","options":[{"id":"f_u65","icon":"🌿","label":"65歲以下"},{"id":"f66_75","icon":"🌳","label":"66～75歲"},{"id":"f76_85","icon":"🌲","label":"76～85歲"},{"id":"f86p","icon":"🍂","label":"86歲以上"}],"next":"E3"},{"id":"E3","branch":"E","short":"家人狀態","type":"single","title":"家人目前的狀態比較接近？","note":"用字維持非醫療描述，不做評估或診斷","options":[{"id":"well","icon":"🌱","label":"生活自理良好，想預防保養","tag":"預防保養"},{"id":"forgetful","icon":"🧩","label":"最近較常忘東忘西，想及早練習","tag":"及早練習"},{"id":"in_care","icon":"🤝","label":"有照護需求，想找適合的活動","tag":"照護活動"},{"id":"unsure","icon":"💬","label":"不確定，想找人聊聊","tag":"想諮詢"}],"next":"X1"},{"id":"F1","branch":"F","short":"單位類型","tag":"單位","type":"single","title":"請問您代表的單位是？","options":[{"id":"company","icon":"🏢","label":"企業"},{"id":"community","icon":"🏘️","label":"社區發展協會／里辦公處","tag":"社區"},{"id":"care_org","icon":"🏥","label":"長照／醫療機構"},{"id":"school","icon":"🏫","label":"學校／教育單位"},{"id":"org_other","icon":"✳️","label":"其他團體"}],"next":"F2"},{"id":"F2","branch":"F","short":"合作形式","type":"multi","title":"想洽談哪些合作形式？","options":[{"id":"talk","icon":"🎤","label":"單場講座"},{"id":"series","icon":"📚","label":"系列課程"},{"id":"seed_coach","icon":"🏅","label":"種子教練培訓"},{"id":"co_event","icon":"🤝","label":"活動合辦"}],"next":"F3"},{"id":"F3","branch":"F","short":"預計人數","tag":"人數","type":"single","title":"預計參與人數？","options":[{"id":"n_u20","icon":"👤","label":"20 人以下"},{"id":"n21_50","icon":"👥","label":"21～50 人"},{"id":"n51_100","icon":"🏟️","label":"51～100 人"},{"id":"n100p","icon":"🎪","label":"100 人以上"}],"next":"time"},{"id":"X1","branch":"X","short":"教練培訓興趣","tag":"教練興趣","type":"single","title":"您也有興趣了解「身腦齡活教練培訓」嗎？","hint":"您的背景很適合帶領身腦齡活課程","showIf":{"all":[{"q":"identity","in":["care_pro","educator","second_career"]},{"q":"need","notIn":["coach","partner"]}]},"options":[{"id":"yes","icon":"🏅","label":"有興趣，想收到資訊","tag":"有興趣"},{"id":"no","icon":"🙂","label":"先不用"}],"next":"course_intent"},{"id":"course_intent","short":"課程意願","type":"single","title":"身腦齡活課程每堂 2 小時，您（或家人）有意願參加嗎？","options":[{"id":"yes","icon":"🙌","label":"有意願，想報名","tag":"有意願"},{"id":"maybe","icon":"🤔","label":"想先了解或體驗","tag":"想了解"},{"id":"no","icon":"⏸️","label":"暫時不考慮","tag":"暫不考慮"}],"next":"price"},{"id":"price","short":"每堂可接受費用","tag":"價格","type":"single","title":"每堂課 2 小時，您可接受的費用是？","showIf":{"q":"course_intent","in":["yes","maybe"]},"options":[{"id":"p1","icon":"🪙","label":"1,000 元以下","tag":"1000以下"},{"id":"p2","icon":"💵","label":"1,001～2,000 元","tag":"1001-2000"},{"id":"p3","icon":"💰","label":"2,001～3,000 元","tag":"2001-3000"},{"id":"p4","icon":"💎","label":"3,001 元以上","tag":"3001以上"}],"next":"mode"},{"id":"mode","short":"參與方式","type":"multi","keepExisting":true,"title":"您比較希望用哪些方式參與？","options":[{"id":"onsite_class","icon":"🏫","label":"實體課程"},{"id":"talk","icon":"🎤","label":"講座"},{"id":"group","icon":"👥","label":"揪團活動"},{"id":"one_on_one","icon":"💬","label":"一對一諮詢"},{"id":"online","icon":"📱","label":"線上資訊／影音"}],"next":"time"},{"id":"time","short":"方便時段","type":"multi","keepExisting":true,"title":"您通常什麼時段比較方便？","options":[{"id":"wd_day","icon":"☀️","label":"平日白天"},{"id":"wd_night","icon":"🌙","label":"平日晚上"},{"id":"we_day","icon":"🌤️","label":"週末白天"},{"id":"we_night","icon":"🌃","label":"週末晚上"},{"id":"any","icon":"🕒","label":"時間都可以","exclusive":true}],"next":"FINISH"}],"finish":{"doneTitle":"感謝您的填寫！","recordTitle":"我的會員問卷紀錄","intro":["感謝您花 1 分鐘完成問卷 🌿","以下是您的會員問卷填答紀錄，方便您再次確認自己的需求與選擇。"],"divider":"━━━━━━━━━━","finalLine":"期待陪您一起動腦、動身，巫奉約身腦齡活關心您身心靈健康。","closingBySegment":{"brain_age":"我們會依您想加強的方向，分享適合的動腦、動身練習與腦年齡資訊。","course":"開課或體驗課開放時，會優先通知您。","coach":"謝謝您對身腦齡活教練培訓的興趣。","events":"有您感興趣的講座，會優先通知您。","family_health":"友善手冊裡有陪伴家人的實用方法，歡迎先領取。","partner":"專人將透過 LINE 與您聯繫，討論合作細節。"},"closingDefault":"我們已經更了解您關心的方向，未來會提供更適合您的腦健康資訊。","notices":[{"id":"coach_booking","showIf":{"any":[{"q":"need","in":["coach"]},{"q":"X1","in":["yes"]}]},"title":"教練培訓請在官方 LINE 預約","body":"教練培訓為固定費用：入門班 15,000 元、進階班 65,000 元，不需填寫價格。請回到官方 LINE 預約。","line":"🏅 教練培訓為固定費用：入門班 15,000 元、進階班 65,000 元，請在官方 LINE 預約。","lineButtonLabel":"回到官方 LINE 預約"}]}};
+    //@@END SurveyConfig
+    var CONFIG_PROBLEMS = SurveyCore.lintConfig(SURVEY_CONFIG);
+
+    /** 驗證問卷頁送來的作答並產生聊天室訊息。失敗回傳 null。 */
+    function buildChatMessages(data) {
+      if (CONFIG_PROBLEMS.length) return { error: 'CONFIG', message: '入口頁的問卷設定檢查未通過。' };
+      if (data.protocol !== 2 || !data.submission || typeof data.submission !== 'object' || Array.isArray(data.submission)) {
+        return { error: 'INVALID_ANSWERS', message: '問卷版本與入口頁不一致，請重新從官方帳號開啟問卷。' };
+      }
+      var replayed = SurveyCore.replay(SURVEY_CONFIG, data.submission);
+      if (!replayed.ok) return { error: 'INVALID_ANSWERS', message: '作答紀錄與問卷流程不一致。' };
+      var text = SurveyCore.buildChatMessage(SURVEY_CONFIG, replayed.result, replayed.otherText);
+      if (typeof text !== 'string' || !text || text.length > 4800) return { error: 'INVALID_ANSWERS', message: '中文作答紀錄格式不正確。' };
+      return { messages: [{ type: 'text', text: text }] };
+    }
+
     function sendResult(requestId, submissionId, status, error) {
       post('FWV2_SEND_RESULT', {
         requestId: requestId, submissionId: submissionId, status: status,
@@ -410,26 +743,12 @@
     }
     function handleSend(data) {
       if (!validId(data.requestId) || !validId(data.submissionId)) return;
-      var messages = validateMessages(data.messages);
-      if (!messages) {
-        sendResult(data.requestId, data.submissionId, 'failed', safeError('send', 'INVALID_MESSAGES', '回傳指令格式不正確。'));
+      var built = buildChatMessages(data);
+      if (built.error) {
+        sendResult(data.requestId, data.submissionId, 'failed', safeError('send', built.error, built.message));
         return;
       }
-      if (Object.prototype.hasOwnProperty.call(data, 'surveyAnswers')) {
-        var answers = normaliseChineseAnswers(data.surveyAnswers);
-        if (!answers || messages.length !== 1 || messages[0].text !== chineseAnswerCommand(answers)) {
-          sendResult(data.requestId, data.submissionId, 'failed', safeError('send', 'INVALID_ANSWERS', '作答紀錄與分類資料不一致。'));
-          return;
-        }
-        messages = [{ type: 'text', text: formatChineseAnswers(answers) }];
-      } else {
-        // 尚未更新的問卷仍能回傳四類中文紀錄，不在聊天室顯示代碼。
-        messages = messages.map(function (message) { return { type: 'text', text: formatChineseCommand(message.text) }; });
-      }
-      if (messages.some(function (message) { return !message.text || message.text.length > 5000; })) {
-        sendResult(data.requestId, data.submissionId, 'failed', safeError('send', 'INVALID_ANSWERS', '中文作答紀錄格式不正確。'));
-        return;
-      }
+      var messages = built.messages;
       var fingerprint = JSON.stringify(messages);
       var old = sendRecords[data.submissionId];
       if (old) {
