@@ -273,13 +273,13 @@
     // ============================================================
 //@@BEGIN SurveyCore
 /*
- * FlowWu｜會員問卷 v3 －－ 共用核心 (survey-core.js)
+ * FlowWu｜會員問卷 v5 －－ 共用核心 (survey-core.js)
  * 同一份程式同時用在三個地方（由建置程式自動貼入，請勿各自手改）：
  *   1. Apps Script 後端 (SurveyCore.gs)   ：重播驗證答案、產生 Sheet 欄位與標籤
  *   2. Apps Script 問卷頁 (Script.html)   ：畫面流程、完成頁紀錄
  *   3. GitHub 入口頁 (flowwu-v2-liff.html)：重播驗證答案、產生聊天室訊息（1～2 則）
  *
- * 第一部分「引擎」為規格 v3 的 survey-engine.js 原樣內容（邏輯未改寫）。
+ * 第一部分「引擎」為規格 v5 的 survey-engine.js 原樣內容（邏輯未改寫）。
  * 第二部分是驗證、訊息與資料欄位的工具函式，全部以「重播」為基礎：
  * 不信任任何外來資料，一律由引擎依設定檔從第一題重新走一遍，路徑與答案都符合才接受。
  */
@@ -287,7 +287,7 @@ var SurveyCore = (function () {
   "use strict";
 
   // =====================================================================
-  //  第一部分：引擎（規格 v3 survey-engine.js 原樣）
+  //  第一部分：引擎（規格 v5 survey-engine.js 原樣）
   // =====================================================================
   function createEngine(config) {
     const FINISH = config.settings.finish || "FINISH";
@@ -296,7 +296,7 @@ var SurveyCore = (function () {
 
     // answers：每題最後一次的答案（單選＝選項 id；複選＝選項 id 陣列，依點選順序）
     // history：實際走過、已作答的題目 id（依順序）＝最後送出的路徑
-    // pending：目前這題複選中、尚未按「沒有了」的已選項目
+    // pending：目前這題複選中、尚未按「選好了」的已選項目
     const state = { answers: {}, history: [], current: null, pending: [] };
 
     // 只採計 history 內的答案：回上一題改答後，舊路線的答案不會影響判斷
@@ -326,6 +326,18 @@ var SurveyCore = (function () {
       return false;
     }
 
+    // 這題要顯示的選項：excludeAnswersOf 指定的題目已選過的選項會隱藏（例：第 2 題不顯示第 1 題選的那項）
+    function visibleOptions(q) {
+      if (!q) return [];
+      if (!q.excludeAnswersOf) return q.options;
+      const used = values(q.excludeAnswersOf);
+      return q.options.filter((o) => !used.includes(o.id));
+    }
+    function keepVisible(q, ids) {
+      const ok = visibleOptions(q).map((o) => o.id);
+      return [].concat(ids || []).filter((id) => ok.includes(id));
+    }
+
     function resolveNext(q) {
       if (typeof q.next === "string") return q.next;
       for (const rule of q.next) {
@@ -350,8 +362,8 @@ var SurveyCore = (function () {
     function enter(id) {
       state.current = settle(id);
       const q = byId[state.current];
-      // 再次來到複選題（例如回上一題）時，帶入先前的選擇，直接顯示追問畫面
-      state.pending = q && q.type === "multi" ? [].concat(state.answers[q.id] || []) : [];
+      // 再次來到複選題（例如回上一題）時，帶入先前的選擇（只留仍可選的），直接顯示追問畫面
+      state.pending = q && q.type === "multi" ? keepVisible(q, state.answers[q.id]) : [];
       return state.current;
     }
 
@@ -374,18 +386,18 @@ var SurveyCore = (function () {
       return enter(config.settings.start);
     }
 
-    // 點選項目：單選 → 直接下一題；複選 → 加入已選，留在本題顯示「還有其他嗎？」
+    // 點選項目：單選 → 直接下一題；複選 → 加入已選，留在本題顯示「選好了嗎？」
     function pick(optionId) {
       const q = currentQuestion();
       if (!q) return state.current;
-      const opt = q.options.find((o) => o.id === optionId);
+      const opt = visibleOptions(q).find((o) => o.id === optionId);
       if (!opt) throw new Error("unknown option " + optionId + " in " + q.id);
 
       if (q.type === "single") {
         state.answers[q.id] = optionId;
         return commit(q);
       }
-      if (opt.exclusive) {               // 獨佔選項（如「時間都可以」）：只選它並直接下一題
+      if (opt.exclusive) {               // 獨佔選項（如「沒有其他了」「時間都可以」）：只選它並直接下一題
         state.pending = [optionId];
         state.answers[q.id] = [optionId];
         return commit(q);
@@ -400,19 +412,22 @@ var SurveyCore = (function () {
       return state.current;
     }
 
+    // 目前這題要顯示的選項（第一輪用）
+    function options() { return visibleOptions(currentQuestion()); }
+
     // 追問畫面的剩餘選項：不含已選、不含獨佔選項；已達 maxPicks 時為空
     function remaining() {
       const q = currentQuestion();
       if (!q || q.type !== "multi") return [];
       if (q.maxPicks && state.pending.length >= q.maxPicks) return [];
-      return q.options.filter((o) => !o.exclusive && !state.pending.includes(o.id));
+      return visibleOptions(q).filter((o) => !o.exclusive && !state.pending.includes(o.id));
     }
 
     // 還可以再選幾項（有 maxPicks 時顯示「還可以再選 N 項」）
     function picksLeft() {
       const q = currentQuestion();
       if (!q || q.type !== "multi") return 0;
-      if (q.maxPicks) return Math.max(0, q.maxPicks - state.pending.length);
+      if (q.maxPicks) return Math.max(0, Math.min(q.maxPicks - state.pending.length, remaining().length));
       return remaining().length;
     }
 
@@ -425,7 +440,7 @@ var SurveyCore = (function () {
       return state.current;
     }
 
-    // 「沒有了，下一題」
+    // 「選好了，下一題」
     function done() {
       const q = currentQuestion();
       if (!q || q.type !== "multi" || state.pending.length === 0) return state.current;
@@ -439,7 +454,7 @@ var SurveyCore = (function () {
       if (!prev) return state.current;
       state.current = prev;
       const q = byId[prev];
-      state.pending = q.type === "multi" ? [].concat(state.answers[prev] || []) : [];
+      state.pending = q.type === "multi" ? keepVisible(q, state.answers[prev]) : [];
       return state.current;
     }
 
@@ -483,27 +498,41 @@ var SurveyCore = (function () {
       path.forEach((id) => {
         const q = byId[id];
         const opts = [].concat(answers[id]).map((x) => optionOf(q, x));
-        opts.forEach((o) => tags.push((q.tag || q.short) + "_" + (o.tag || o.label)));
+        opts.forEach((o) => { if (!o.noTag) tags.push((q.tag || q.short) + "_" + (o.tag || o.label)); });
         lines.push(q.short + "：" + opts.map((o) => o.label).join("、"));
       });
 
       const fin = config.finish || {};
-      // 分眾：主要需求，保留點選順序（第一個＝最想了解）
-      const segments = [].concat(answers[fin.segmentBy || "need"] || []);
-      // 下一步卡片：依設定順序，條件成立才出現
-      const nextSteps = (fin.nextSteps || []).filter((s) => evalCond(s.showIf));
+      // 分眾：主要需求（第 1 題）＋補充需求（第 2 題），不含「沒有其他了」這類不貼標的選項
+      const primary = fin.primaryBy ? (answers[fin.primaryBy] != null ? answers[fin.primaryBy] : null) : null;
+      const segments = [];
+      [].concat(fin.segmentBy || []).forEach((qid) => {
+        const q = byId[qid];
+        [].concat(answers[qid] || []).forEach((id) => {
+          if (q && !optionOf(q, id).noTag && !segments.includes(id)) segments.push(id);
+        });
+      });
+      // 下一步卡片：依設定順序，條件成立才出現（kind：ask／notify／info／link）
+      // 和第 1 題那一項有關的卡片排最前面（卡片屬於該組，或出現條件提到第 1 題選了它）
+      const mentions = (c) => !!c && (c.all ? c.all.some(mentions) : c.any ? c.any.some(mentions)
+        : c.q === fin.primaryBy && (c.in || []).includes(primary));
+      const rank = (s) => (s.group === primary || mentions(s.showIf) ? 0 : 1);
+      const nextSteps = (fin.nextSteps || []).filter((s) => evalCond(s.showIf))
+        .map((s, i) => ({ s, i }))
+        .sort((a, b) => (rank(a.s) - rank(b.s)) || (a.i - b.i))
+        .map((x) => x.s);
       nextSteps.forEach((s) => { if (s.tag) tags.push(s.tag); });
       // 要傳到官方 LINE 的詢問（第二則訊息）
       const asks = nextSteps.filter((s) => s.ask).map((s) => s.ask);
       const labelled = nextSteps.find((s) => s.lineButtonLabel);
       const lineButtonLabel = labelled ? labelled.lineButtonLabel
         : (asks.length ? fin.askButtonLabel : fin.defaultButtonLabel) || "回到 LINE";
-      return { version: config.meta.version, segments, path, answers, tags, lines, nextSteps, asks, lineButtonLabel };
+      return { version: config.meta.version, primary, segments, path, answers, tags, lines, nextSteps, asks, lineButtonLabel };
     }
 
     // 回傳官方 LINE 的訊息（給 liff.sendMessages，最多 5 則）
     // 第一則：作答紀錄＋下一步；第二則：有需要詢問時才送「我想詢問：…」，方便小編或自動回覆接手
-    // （本專案的實際聊天室訊息由下方 buildChatMessages 產生：主要需求與身份逐項各占一行，供 Chatisfy 關鍵字貼標）
+    // （本專案的實際聊天室訊息由下方 buildChatMessages 產生：需求補充與身份逐項各占一行，供 Chatisfy 關鍵字貼標）
     function lineMessages(r) {
       r = r || result();
       const m = (config.finish && config.finish.lineMessage) || {};
@@ -518,7 +547,7 @@ var SurveyCore = (function () {
     }
 
     return {
-      start, pick, unpick, done, back, phase, remaining, picksLeft, projectedTotal, result, lineMessages,
+      start, pick, unpick, done, back, phase, options, remaining, picksLeft, projectedTotal, result, lineMessages,
       currentQuestion, evalCond, state, byId, FINISH,
     };
   }
@@ -563,7 +592,7 @@ var SurveyCore = (function () {
       if (path[i] !== q.id) return fail('PATH', q.id);
       if (!hasOwn(answers, q.id)) return fail('ANSWER', q.id);
       var a = answers[q.id];
-      var ids = q.options.map(function (o) { return o.id; });
+      var ids = engine.options().map(function (o) { return o.id; });   // 已套用 excludeAnswersOf：第 2 題不能含第 1 題的答案
       if (q.type === 'single') {
         if (typeof a !== 'string' || ids.indexOf(a) === -1) return fail('ANSWER', q.id);
         engine.pick(a);
@@ -576,7 +605,7 @@ var SurveyCore = (function () {
           seen[a[j]] = true;
         }
         var exclusiveId = null;
-        q.options.forEach(function (o) { if (o.exclusive && seen[o.id]) exclusiveId = o.id; });
+        engine.options().forEach(function (o) { if (o.exclusive && seen[o.id]) exclusiveId = o.id; });
         if (exclusiveId && a.length !== 1) return fail('ANSWER', q.id);
         // 依送來的順序（＝點選順序）逐一點選；選滿上限或全部選完時引擎會自動前進，之後不能再點
         for (var k = 0; k < a.length; k++) {
@@ -624,7 +653,7 @@ var SurveyCore = (function () {
     config.questions.forEach(function (q) { if (names.indexOf(q.short) === -1) names.push(q.short); });
     var title = lineCfg(config).recordTitle || '';
     if (title) names.push(title);
-    names.push('感興趣');   // 舊版「感興趣」欄位名稱（Chatisfy 仍可能保留該規則，一併防護）
+    names.push('感興趣'); names.push('主要需求');   // 舊版「感興趣」欄位名稱（Chatisfy 仍可能保留該規則，一併防護）
     var out = text;
     names.forEach(function (n) {
       out = out.split(n + '：').join(n + '・').split(n + ':').join(n + '・');
@@ -693,6 +722,7 @@ var SurveyCore = (function () {
       var q = qm[id];
       [].concat(result.answers[id]).forEach(function (x) {
         var o = q.options.filter(function (y) { return y.id === x; })[0];
+        if (o && o.noTag) return;
         tags.push('V2｜' + (q.tag || q.short) + '｜' + ((o && o.tag) || (o && o.label) || x));
       });
     });
@@ -709,8 +739,9 @@ var SurveyCore = (function () {
 
   /**
    * 寫入 Google Sheet 的欄位（以「標題名稱」為鍵）。
-   * 舊有欄位（地區、身份…）沿用；新增欄位放在表格最右邊。
-   * 「參與方式」v3 已刪除題目，欄位保留（舊資料還在），新資料留空。
+   * 舊有欄位（地區、身份、主要需求…）沿用；V5 新增欄位放在表格最右邊（缺少時後端自動補）。
+   * 「興趣」「參與方式」「課程意願」「每堂可接受費用」v5 已沒有對應題目：欄位保留（舊資料還在），新資料留空。
+   * 「方便時段」沿用為「上課時段或聯繫時段」的合併顯示，另有「上課時段」「聯繫時段」兩欄分開記錄。
    */
   function buildSheetFields(config, result, otherText) {
     var qm = questionMap(config);
@@ -721,31 +752,42 @@ var SurveyCore = (function () {
     });
     var needQ = qm.need;
     var segment = result.segments.map(function (x) { return labelOf(needQ, x); }).join('、');
+    var J = function (id) { return joinedLabels(config, result, id); };
     return {
-      '地區': joinedLabels(config, result, 'region'),
-      '身份': joinedLabels(config, result, 'identity'),
+      '地區': J('region'),
+      '身份': J('identity'),
       '其他身份說明': otherText || '',
-      '年齡': joinedLabels(config, result, 'age'),
-      '主要需求': joinedLabels(config, result, 'need'),
+      '年齡': J('age'),
+      '主要需求': J('need'),
       '興趣': '',
       '參與方式': '',
-      '方便時段': joinedLabels(config, result, 'time'),
+      '方便時段': J('class_time') || J('contact_time'),
       'V2標籤': buildTags(config, result).join(', '),
       '流程版本': String(config.meta.version),
       '分支': segment,
       '分支題作答': branchLines.join('；'),
-      '教練培訓興趣': joinedLabels(config, result, 'X1'),
-      '課程意願': joinedLabels(config, result, 'B3'),
-      '每堂可接受費用': joinedLabels(config, result, 'B4'),
+      '教練培訓興趣': J('coach_interest'),
+      '課程意願': '',
+      '每堂可接受費用': '',
       '作答路徑': result.path.join('>'),
       '作答JSON': JSON.stringify(result.answers),
       '下一步卡片': result.nextSteps.map(function (s) { return s.title; }).join('、'),
-      '詢問項目': result.asks.join('、')
+      '詢問項目': result.asks.join('、'),
+      '其他也想了解': J('need_more'),
+      '身腦齡活對象': J('sl_for'),
+      '身腦齡活意願': J('sl_intent'),
+      '身腦齡活預算': J('sl_budget'),
+      '認知賦能對象': J('cog_for'),
+      '認知賦能意願': J('cog_intent'),
+      '認知賦能預算': J('cog_budget'),
+      '上課時段': J('class_time'),
+      '聯繫時段': J('contact_time')
     };
   }
 
   /** 新增欄位（舊表沒有時，由後端自動補在最右邊）。 */
-  var NEW_SHEET_HEADERS = ['流程版本', '分支', '分支題作答', '教練培訓興趣', '課程意願', '每堂可接受費用', '作答路徑', '作答JSON', '下一步卡片', '詢問項目'];
+  var NEW_SHEET_HEADERS = ['流程版本', '分支', '分支題作答', '教練培訓興趣', '課程意願', '每堂可接受費用', '作答路徑', '作答JSON', '下一步卡片', '詢問項目',
+    '其他也想了解', '身腦齡活對象', '身腦齡活意願', '身腦齡活預算', '認知賦能對象', '認知賦能意願', '認知賦能預算', '上課時段', '聯繫時段'];
 
   /** 設定檔自我檢查：下一題指向的題目都存在、沒有孤兒題、選項 id 不重複、條件引用的題目與選項都存在。回傳問題清單。 */
   function lintConfig(config) {
@@ -773,6 +815,14 @@ var SurveyCore = (function () {
       var oids = q.options.map(function (o) { return o.id; });
       oids.forEach(function (id, i) { if (oids.indexOf(id) !== i) problems.push(q.id + ' 選項 id 重複：' + id); });
       if (q.maxPicks && (q.type !== 'multi' || q.maxPicks < 1 || q.maxPicks > oids.length)) problems.push(q.id + ' maxPicks 設定不合理');
+      if (q.type === 'multi' && !q.maxPicks) problems.push(q.id + ' 複選題必須設定 maxPicks（V5：所有複選題最多選 2 項）');
+      if (q.excludeAnswersOf) {
+        var ex = qm[q.excludeAnswersOf];
+        if (!ex) problems.push(q.id + ' excludeAnswersOf 指向不存在的題目 ' + q.excludeAnswersOf);
+        else if (index[ex.id] >= qi) problems.push(q.id + ' excludeAnswersOf 指向排在自己後面的題目');
+        else q.options.forEach(function (op) { if (!op.exclusive && !ex.options.some(function (e) { return e.id === op.id; })) problems.push(q.id + ' 選項 ' + op.id + ' 在 ' + ex.id + ' 找不到對應選項'); });
+      }
+      q.options.forEach(function (op) { if (op.noTag && !op.exclusive) problems.push(q.id + '.' + op.id + ' noTag 必須搭配 exclusive'); });
       if (q.type !== 'single' && q.type !== 'multi') problems.push(q.id + ' type 必須是 single 或 multi');
       if (typeof q.next === 'string') { target(q.next, q.id); reached[q.next] = true; }
       else (q.next || []).forEach(function (r) { target(r.goto, q.id); reached[r.goto] = true; checkCond(r['if'], q.id + '.next', qi); });
@@ -795,10 +845,19 @@ var SurveyCore = (function () {
       if (!fin.kindLabels || !fin.kindLabels[s.kind]) problems.push('下一步 ' + s.id + ' 的 kind 沒有對應的 kindLabels：' + s.kind);
       if (s.kind === 'ask' && !s.ask) problems.push('下一步 ' + s.id + ' 是 ask 類，缺少 ask 文字');
       if (s.kind !== 'ask' && s.ask) problems.push('下一步 ' + s.id + ' 不是 ask 類卻有 ask 文字');
+      if (s.link) {
+        if (!s.link.label) problems.push('下一步 ' + s.id + ' 的 link 缺少 label');
+        if (!/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(String(s.link.url || ''))) problems.push('下一步 ' + s.id + ' 的 link.url 必須是 https://script.google.com/macros/s/…/exec');
+        if (s.ask) problems.push('下一步 ' + s.id + ' 有連結卻同時要自動詢問');
+      }
+      if (s.kind === 'link' && !s.link) problems.push('下一步 ' + s.id + ' 是 link 類，缺少 link');
+      if (s.kind !== 'link' && s.link) problems.push('下一步 ' + s.id + ' 不是 link 類卻有 link');
       if (!s.title || !s.body) problems.push('下一步 ' + s.id + ' 缺少 title／body');
     });
-    var seg = qm[fin.segmentBy || 'need'];
-    if (!seg) problems.push('finish.segmentBy 指向不存在的題目');
+    [].concat(fin.segmentBy || 'need').forEach(function (sid) { if (!qm[sid]) problems.push('finish.segmentBy 指向不存在的題目 ' + sid); });
+    if (fin.primaryBy && !qm[fin.primaryBy]) problems.push('finish.primaryBy 指向不存在的題目');
+    var mu = (config.settings && config.settings.multi) || {};
+    ['firstHint', 'moreTitle', 'moreHintLimited', 'fullHint', 'doneLabel', 'moreOptionsLabel'].forEach(function (k) { if (!mu[k]) problems.push('settings.multi.' + k + ' 不可空白'); });
     var lm = fin.lineMessage || {};
     ['title', 'intro', 'recordTitle', 'divider', 'closing', 'askTitle', 'nextStepsTitle'].forEach(function (k) {
       if (!lm[k]) problems.push('finish.lineMessage.' + k + ' 不可空白');
@@ -823,7 +882,7 @@ var SurveyCore = (function () {
 //@@END SurveyCore
 
     //@@BEGIN SurveyConfig
-    var SURVEY_CONFIG = {"meta":{"name":"巫奉約身腦齡活｜會員問卷","version":"3.0","updated":"2026-10-13"},"settings":{"start":"need","finish":"FINISH","autoAdvanceMs":250,"projectionAssume":{"need":["course"]},"singleHint":"點選後直接進入下一題","multi":{"firstHint":"可複選，先點一項","moreTitle":"還有其他嗎？","moreHint":"可再點一項；都選好了就按「沒有了」","moreHintLimited":"還可以再選 {n} 項；都選好了就按「沒有了」","doneLabel":"沒有了，下一題","donePosition":"first"},"otherText":{"question":"identity","option":"other","label":"請簡單說明您的身份（選填）","placeholder":"可以不填","maxLength":60}},"questions":[{"id":"need","short":"主要需求","tag":"需求","type":"multi","maxPicks":3,"lineMode":"perOption","keepExisting":true,"title":"您目前最想了解哪些？","hint":"最多選 3 項，先點最想了解的","note":"分流題。選了哪幾項，就依 A→F 順序接那幾組追問；沒選的整組跳過。選項與圖示沿用現有。答案依點選順序存，第一個＝最想了解。聊天室訊息每個選項各占一行（Chatisfy 關鍵字才會逐項貼標）","options":[{"id":"brain_age","icon":"🧠","label":"我的腦年齡","tag":"腦年齡"},{"id":"course","icon":"📘","label":"身腦齡活課程","tag":"身腦齡活課程"},{"id":"coach","icon":"🏅","label":"身腦齡活教練培訓","tag":"教練培訓"},{"id":"events","icon":"🎤","label":"講座與活動","tag":"講座活動"},{"id":"family_health","icon":"👪","label":"家人的腦健康","tag":"家人腦健康"},{"id":"partner","icon":"🤝","label":"企業／社區／機構合作","tag":"合作邀約"}],"next":"region"},{"id":"region","short":"地區","tag":"地區","type":"single","keepExisting":true,"title":"您目前主要居住在哪個地區？","options":[{"id":"tp","icon":"🏙️","label":"雙北","desc":"台北市、新北市","tag":"雙北"},{"id":"ty","icon":"✈️","label":"桃園","desc":"桃園市","tag":"桃園"},{"id":"north","icon":"⛰️","label":"北部其他","desc":"基隆、新竹、苗栗","tag":"北部其他"},{"id":"central","icon":"🌾","label":"中部","desc":"台中、彰化、南投、雲林","tag":"中部"},{"id":"south","icon":"☀️","label":"南部","desc":"嘉義、台南、高雄、屏東","tag":"南部"},{"id":"east","icon":"🌊","label":"東部","desc":"宜蘭、花蓮、台東","tag":"東部"},{"id":"offshore","icon":"🏝️","label":"離島／海外","desc":"澎湖、金門、馬祖或海外","tag":"離島海外"}],"next":"identity"},{"id":"identity","short":"身份","tag":"身份","type":"multi","keepExisting":true,"lineMode":"perOption","title":"請問您目前比較符合哪些身份？","note":"除了記錄身份，也決定是否加問 X1（教練培訓興趣）","options":[{"id":"self","icon":"🌱","label":"我自己想維持與提升腦健康","tag":"一般民眾"},{"id":"family","icon":"👨‍👩‍👧","label":"我關心或陪伴家人的腦健康","tag":"家屬照護者"},{"id":"care_pro","icon":"🩺","label":"我是照護／長照／健康相關專業人員","tag":"照護專業"},{"id":"educator","icon":"🎓","label":"我從事教育、活動帶領或社區服務","tag":"教育活動帶領者"},{"id":"second_career","icon":"🧭","label":"我正在規劃退休後或第二職涯","tag":"第二職涯"},{"id":"other","icon":"✏️","label":"其他","tag":"其他"}],"next":"age"},{"id":"age","short":"年齡","type":"single","keepExisting":true,"title":"請問您的年齡範圍是？","options":[{"id":"u45","icon":"🌱","label":"45歲以下"},{"id":"a46_55","icon":"🌿","label":"46～55歲"},{"id":"a56_65","icon":"🌳","label":"56～65歲"},{"id":"a66_75","icon":"🌲","label":"66～75歲"},{"id":"a76p","icon":"🍂","label":"76歲以上"}],"next":"A1"},{"id":"A1","branch":"A","short":"想加強","type":"multi","title":"您最想加強哪些方面？","showIf":{"q":"need","in":["brain_age"]},"options":[{"id":"memory","icon":"🧩","label":"記憶力"},{"id":"focus","icon":"🎯","label":"專注力"},{"id":"reaction","icon":"⚡","label":"反應速度"},{"id":"mood","icon":"🌤️","label":"情緒與壓力"},{"id":"sleep","icon":"😴","label":"睡眠品質"},{"id":"balance","icon":"🧘","label":"體能與平衡"}],"next":"A2"},{"id":"A2","branch":"A","short":"腦年齡檢測","type":"single","title":"想進一步了解 MRI 腦年齡檢測嗎？","showIf":{"q":"need","in":["brain_age"]},"options":[{"id":"detail","icon":"🧠","label":"想知道檢測方式與費用","tag":"想了解"},{"id":"talk_first","icon":"🎤","label":"想先參加講座了解","tag":"先聽講座"},{"id":"not_now","icon":"🙂","label":"目前先不用","tag":"先不用"}],"next":"B1"},{"id":"B1","branch":"B","short":"課程對象","type":"single","title":"您是為誰了解身腦齡活課程？","showIf":{"q":"need","in":["course"]},"options":[{"id":"me","icon":"🙋","label":"我自己"},{"id":"for_family","icon":"👵","label":"幫家人了解"},{"id":"together","icon":"👫","label":"我和家人一起上"}],"next":"B2"},{"id":"B2","branch":"B","short":"想了解班別","tag":"班別","type":"single","title":"比較想了解哪一種班？","showIf":{"q":"need","in":["course"]},"options":[{"id":"regular","icon":"🌱","label":"身腦齡活班","desc":"預防保養、維持活力"},{"id":"reverse","icon":"🧩","label":"逆齡專班","desc":"加強記憶與專注"},{"id":"both","icon":"📘","label":"都想了解"}],"next":"B3"},{"id":"B3","branch":"B","short":"參加意願","tag":"課程意願","type":"single","title":"您目前的參加意願是？","hint":"每堂課 2 小時，每堂獨立，隨時可以加入","showIf":{"q":"need","in":["course"]},"options":[{"id":"enroll","icon":"🙌","label":"想報名整期課程","tag":"想報名"},{"id":"trial","icon":"🎟️","label":"想先單堂體驗","tag":"單堂體驗"},{"id":"info","icon":"📄","label":"先了解課程內容","tag":"先了解"}],"next":"B4"},{"id":"B4","branch":"B","short":"每堂可接受費用","tag":"價格","type":"single","title":"每堂課 2 小時，您可接受的費用是？","note":"全問卷只有這一題問價格，只出現在選了「身腦齡活課程」的人","showIf":{"q":"need","in":["course"]},"options":[{"id":"p1","icon":"🪙","label":"1,000 元以下","tag":"1000以下"},{"id":"p2","icon":"💵","label":"1,001～2,000 元","tag":"1001-2000"},{"id":"p3","icon":"💰","label":"2,001～3,000 元","tag":"2001-3000"},{"id":"p4","icon":"💎","label":"3,001 元以上","tag":"3001以上"}],"next":"C1"},{"id":"C1","branch":"C","short":"相關背景","tag":"教練背景","type":"multi","title":"您目前有哪些相關背景？","showIf":{"q":"need","in":["coach"]},"options":[{"id":"care","icon":"🤲","label":"照護／長照"},{"id":"medical","icon":"🩺","label":"醫療／復健"},{"id":"fitness","icon":"💪","label":"運動教練／體適能"},{"id":"edu","icon":"🎓","label":"教育／社區帶領"},{"id":"none","icon":"🌱","label":"沒有相關經驗","exclusive":true}],"next":"C2"},{"id":"C2","branch":"C","short":"教練規劃","type":"single","title":"取得教練資格後，您最想怎麼運用？","showIf":{"q":"need","in":["coach"]},"options":[{"id":"business","icon":"💼","label":"開課創業／斜槓收入","tag":"開課創業"},{"id":"at_work","icon":"🏥","label":"運用在現在的工作"},{"id":"family_self","icon":"🏡","label":"照顧家人與自己"},{"id":"explore","icon":"🔍","label":"先了解看看"}],"next":"C3"},{"id":"C3","branch":"C","short":"想了解的班別","tag":"教練班別","type":"single","title":"想了解哪一個教練培訓班？","note":"教練培訓為固定費用，不問價格；完成頁請他在官方 LINE 預約","showIf":{"q":"need","in":["coach"]},"options":[{"id":"basic","icon":"🌱","label":"入門班","desc":"15,000 元"},{"id":"advanced","icon":"🏅","label":"進階班","desc":"65,000 元"},{"id":"unsure","icon":"💬","label":"還不確定，想先諮詢","tag":"想諮詢"}],"next":"D1"},{"id":"D1","branch":"D","short":"講座主題","type":"multi","title":"您對哪些講座主題有興趣？","showIf":{"q":"need","in":["events"]},"options":[{"id":"prevention","icon":"🛡️","label":"失智預防"},{"id":"brain_training","icon":"🧩","label":"腦力訓練"},{"id":"movement","icon":"🤸","label":"運動與平衡"},{"id":"brain_age_test","icon":"🧠","label":"腦年齡與檢測"},{"id":"caregiving","icon":"💛","label":"家屬陪伴技巧"},{"id":"retirement","icon":"🧭","label":"退休生活規劃"}],"next":"D2"},{"id":"D2","branch":"D","short":"同行人數","tag":"同行","type":"single","title":"通常會幾個人一起參加？","showIf":{"q":"need","in":["events"]},"options":[{"id":"solo","icon":"🙋","label":"自己參加"},{"id":"small","icon":"👫","label":"2～3 人"},{"id":"group","icon":"👥","label":"4 人以上（可揪團）","tag":"揪團"}],"next":"E1"},{"id":"E1","branch":"E","short":"關心的家人","tag":"家人","type":"single","title":"您關心的家人是？","showIf":{"q":"need","in":["family_health"]},"options":[{"id":"parent","icon":"👵","label":"父母／長輩"},{"id":"spouse","icon":"💑","label":"配偶／伴侶"},{"id":"other_family","icon":"👨‍👩‍👧","label":"其他家人"}],"next":"E2"},{"id":"E2","branch":"E","short":"家人狀態","type":"single","title":"家人目前的狀態比較接近？","note":"用字維持非醫療描述，不做評估或診斷；答案決定完成頁給哪一種下一步","showIf":{"q":"need","in":["family_health"]},"options":[{"id":"well","icon":"🌱","label":"生活自理良好，想預防保養","tag":"預防保養"},{"id":"forgetful","icon":"🧩","label":"最近較常忘東忘西，想及早練習","tag":"及早練習"},{"id":"in_care","icon":"🤝","label":"有照護需求，想找適合的活動","tag":"照護活動"},{"id":"unsure","icon":"💬","label":"不確定，想找人聊聊","tag":"想諮詢"}],"next":"F1"},{"id":"F1","branch":"F","short":"單位類型","tag":"單位","type":"single","title":"請問您代表的單位是？","showIf":{"q":"need","in":["partner"]},"options":[{"id":"company","icon":"🏢","label":"企業"},{"id":"community","icon":"🏘️","label":"社區發展協會／里辦公處","tag":"社區"},{"id":"care_org","icon":"🏥","label":"長照／醫療機構"},{"id":"school","icon":"🏫","label":"學校／教育單位"},{"id":"org_other","icon":"✳️","label":"其他團體"}],"next":"F2"},{"id":"F2","branch":"F","short":"合作形式","type":"multi","title":"想洽談哪些合作形式？","showIf":{"q":"need","in":["partner"]},"options":[{"id":"talk","icon":"🎤","label":"單場講座"},{"id":"series","icon":"📚","label":"系列課程"},{"id":"seed_coach","icon":"🏅","label":"種子教練培訓"},{"id":"co_event","icon":"🤝","label":"活動合辦"}],"next":"F3"},{"id":"F3","branch":"F","short":"預計人數","tag":"人數","type":"single","title":"預計參與人數？","showIf":{"q":"need","in":["partner"]},"options":[{"id":"n_u20","icon":"👤","label":"20 人以下"},{"id":"n21_50","icon":"👥","label":"21～50 人"},{"id":"n51_100","icon":"🏟️","label":"51～100 人"},{"id":"n100p","icon":"🎪","label":"100 人以上"}],"next":"X1"},{"id":"X1","branch":"X","short":"教練培訓興趣","tag":"教練興趣","type":"single","title":"您也有興趣了解「身腦齡活教練培訓」嗎？","hint":"您的背景很適合帶領身腦齡活課程","showIf":{"all":[{"q":"identity","in":["care_pro","educator","second_career"]},{"q":"need","in":["brain_age","course","events","family_health"]},{"q":"need","notIn":["coach"]}]},"options":[{"id":"yes","icon":"🏅","label":"有興趣，想了解","tag":"有興趣"},{"id":"no","icon":"🙂","label":"先不用"}],"next":"time"},{"id":"time","short":"方便時段","type":"multi","keepExisting":true,"title":"您通常什麼時段比較方便？","options":[{"id":"wd_day","icon":"☀️","label":"平日白天"},{"id":"wd_night","icon":"🌙","label":"平日晚上"},{"id":"we_day","icon":"🌤️","label":"週末白天"},{"id":"we_night","icon":"🌃","label":"週末晚上"},{"id":"any","icon":"🕒","label":"時間都可以","exclusive":true}],"next":"FINISH","note":"只問要排時間的需求：課程、教練培訓、講座","showIf":{"q":"need","in":["course","coach","events"]}}],"finish":{"title":"感謝您的填寫！","intro":"我們已經更了解您關心的方向，以下是為您安排的下一步。","segmentBy":"need","sendAskMessage":true,"defaultButtonLabel":"回到 LINE","askButtonLabel":"回到官方 LINE 詢問","kindLabels":{"ask":"已幫您傳到官方 LINE","askNotSent":"請到官方 LINE 詢問","notify":"優先通知","info":"分享資訊"},"lineMessage":{"title":"感謝您完成問卷 🌿","intro":"以下是您的會員問卷填答紀錄，方便您再次確認自己的需求與選擇。","recordIcon":"📋","recordTitle":"我的會員問卷紀錄","divider":"━━━━━━━━━━","nextStepsTitle":"📌 下一步","closing":"期待陪您一起動腦、動身，巫奉約身腦齡活關心您身心靈健康。","askTitle":"我想詢問："},"nextSteps":[{"id":"brain_test","group":"brain_age","kind":"ask","showIf":{"all":[{"q":"need","in":["brain_age"]},{"q":"A2","in":["detail"]}]},"title":"MRI 腦年齡檢測","body":"檢測方式與費用，請直接在官方 LINE 詢問，我們會在聊天室回覆您。","line":"MRI 腦年齡檢測：檢測方式與費用，請在官方 LINE 詢問","ask":"MRI 腦年齡檢測的方式與費用","tag":"詢問_腦年齡檢測"},{"id":"brain_tips","group":"brain_age","kind":"info","showIf":{"all":[{"q":"need","in":["brain_age"]},{"q":"A2","in":["not_now"]}]},"title":"動腦動身小練習","body":"我們會依您想加強的方向，分享適合的練習。想了解 MRI 腦年齡檢測時，隨時在官方 LINE 詢問。","line":"動腦動身小練習：依您想加強的方向分享練習","tag":"資訊_腦健康練習"},{"id":"course_enroll","group":"course","kind":"ask","showIf":{"all":[{"q":"need","in":["course"]},{"q":"B3","in":["enroll"]}]},"title":"報名身腦齡活課程","body":"每堂課獨立，隨時可以加入。報名方式請在官方 LINE 詢問。","line":"報名身腦齡活課程：每堂獨立，隨時可以加入，報名請在官方 LINE 詢問","ask":"報名身腦齡活課程","tag":"詢問_課程報名"},{"id":"course_trial","group":"course","kind":"ask","showIf":{"all":[{"q":"need","in":["course"]},{"q":"B3","in":["trial"]}]},"title":"身腦齡活單堂體驗","body":"單堂體驗的時間與地點，請在官方 LINE 詢問。","line":"身腦齡活單堂體驗：時間與地點請在官方 LINE 詢問","ask":"安排身腦齡活單堂體驗","tag":"詢問_單堂體驗"},{"id":"course_info","group":"course","kind":"info","showIf":{"all":[{"q":"need","in":["course"]},{"q":"B3","in":["info"]}]},"title":"課程介紹","body":"我們會在官方 LINE 分享身腦齡活班與逆齡專班的課程內容。","line":"課程介紹：會在官方 LINE 分享身腦齡活班與逆齡專班的內容","tag":"資訊_課程介紹"},{"id":"coach","group":"coach","kind":"ask","showIf":{"any":[{"q":"need","in":["coach"]},{"q":"X1","in":["yes"]}]},"title":"教練培訓","body":"費用固定：入門班 15,000 元、進階班 65,000 元。請在官方 LINE 預約。","line":"教練培訓：入門班 15,000 元、進階班 65,000 元，請在官方 LINE 預約","ask":"預約身腦齡活教練培訓","tag":"詢問_教練培訓預約","lineButtonLabel":"回到官方 LINE 預約"},{"id":"events","group":"events","kind":"notify","showIf":{"any":[{"q":"need","in":["events"]},{"all":[{"q":"need","in":["brain_age"]},{"q":"A2","in":["talk_first"]}]}]},"title":"講座與活動","body":"有您感興趣的新場次時，會優先通知您；想查近期場次，也可以在官方 LINE 詢問。","line":"講座與活動：有新場次時優先通知您","tag":"通知_講座活動"},{"id":"family_consult","group":"family_health","kind":"ask","showIf":{"all":[{"q":"need","in":["family_health"]},{"q":"E2","in":["in_care","unsure"]}]},"title":"家人腦健康諮詢","body":"家人的狀況，歡迎在官方 LINE 和我們聊聊。","line":"家人腦健康諮詢：歡迎在官方 LINE 和我們聊聊","ask":"家人腦健康諮詢","tag":"詢問_家人諮詢"},{"id":"family_class","group":"family_health","kind":"info","showIf":{"all":[{"q":"need","in":["family_health"]},{"q":"E2","in":["well","forgetful"]}]},"title":"陪伴家人","body":"先領取下方《向失智說再見》友善手冊；適合家人的課程，我們會在官方 LINE 分享。","line":"陪伴家人：先看《向失智說再見》友善手冊，適合家人的課程會在官方 LINE 分享","tag":"資訊_家人課程"},{"id":"partner","group":"partner","kind":"ask","showIf":{"q":"need","in":["partner"]},"title":"機構合作","body":"專人會透過官方 LINE 與您聯繫，討論合作形式與時間。","line":"機構合作：專人會透過官方 LINE 與您聯繫","ask":"洽談機構合作","tag":"詢問_機構合作"}]}};
+    var SURVEY_CONFIG = {"meta":{"name":"巫奉約身腦齡活｜會員問卷","version":"5.0","updated":"2026-10-15"},"settings":{"start":"need","finish":"FINISH","autoAdvanceMs":250,"projectionAssume":{"need":["course"],"need_more":["none"]},"singleHint":"點選後直接進入下一題","multi":{"firstHint":"最多選 2 項","moreTitle":"選好了嗎？","moreHint":"選好了就按「選好了，下一題」","moreHintLimited":"還可以再選 {n} 項；選好了就按「選好了，下一題」","fullHint":"已選滿 {max} 項；要換的話，先點 ✕ 移除","doneLabel":"選好了，下一題","donePosition":"first","moreOptionsLabel":"還想加選的話："},"otherText":{"question":"identity","option":"other","label":"請簡單說明您的身份（選填）","placeholder":"可以不填","maxLength":60}},"questions":[{"id":"need","short":"最想了解","tag":"需求","type":"single","title":"您最想了解的是哪一項？","hint":"先選一項最想了解的，其他的下一題可以補充","note":"分流題，單選。只追問這一項（A～G 其中一組）。兩種課程要顯示第二行說明。標籤沿用上線版命名（需求_…）","options":[{"id":"brain_age","icon":"🧠","label":"我的腦年齡","tag":"腦年齡"},{"id":"course","icon":"📘","label":"身腦齡活課程","desc":"預防保養、維持活力","tag":"身腦齡活課程"},{"id":"cognitive","icon":"🧩","label":"認知賦能課程","desc":"適合已經出現認知異常的人","tag":"認知賦能課程"},{"id":"coach","icon":"🏅","label":"身腦齡活教練培訓","tag":"教練培訓"},{"id":"events","icon":"🎤","label":"講座與活動","tag":"講座活動"},{"id":"family_health","icon":"👨‍👩‍👦","label":"家人的腦健康","tag":"家人腦健康"},{"id":"partner","icon":"🤝","label":"企業／社區／機構合作","tag":"合作邀約"}],"next":"need_more"},{"id":"need_more","short":"其他也想了解","tag":"其他需求","type":"multi","maxPicks":2,"lineMode":"perOption","excludeAnswersOf":"need","title":"還有其他也想了解的嗎？","hint":"最多選 2 項；沒有的話點「沒有其他了」","note":"補充題：只記錄、不加題，完成頁給連結、通知或提示。自動隱藏第 1 題選過的選項。「沒有其他了」放第一個，點了直接下一題。聊天室訊息每個選項各占一行","options":[{"id":"none","icon":"🙆","label":"沒有其他了","exclusive":true,"noTag":true},{"id":"brain_age","icon":"🧠","label":"我的腦年齡","tag":"腦年齡"},{"id":"course","icon":"📘","label":"身腦齡活課程","desc":"預防保養、維持活力","tag":"身腦齡活課程"},{"id":"cognitive","icon":"🧩","label":"認知賦能課程","desc":"適合已經出現認知異常的人","tag":"認知賦能課程"},{"id":"coach","icon":"🏅","label":"身腦齡活教練培訓","tag":"教練培訓"},{"id":"events","icon":"🎤","label":"講座與活動","tag":"講座活動"},{"id":"family_health","icon":"👨‍👩‍👦","label":"家人的腦健康","tag":"家人腦健康"},{"id":"partner","icon":"🤝","label":"企業／社區／機構合作","tag":"合作邀約"}],"next":"region"},{"id":"region","short":"地區","tag":"地區","type":"single","keepExisting":true,"title":"您目前主要居住在哪個地區？","options":[{"id":"tp","icon":"🏙️","label":"雙北","desc":"台北市、新北市","tag":"雙北"},{"id":"ty","icon":"✈️","label":"桃園","desc":"桃園市","tag":"桃園"},{"id":"north","icon":"⛰️","label":"北部其他","desc":"基隆、新竹、苗栗","tag":"北部其他"},{"id":"central","icon":"🌾","label":"中部","desc":"台中、彰化、南投、雲林","tag":"中部"},{"id":"south","icon":"☀️","label":"南部","desc":"嘉義、台南、高雄、屏東","tag":"南部"},{"id":"east","icon":"🌊","label":"東部","desc":"宜蘭、花蓮、台東","tag":"東部"},{"id":"offshore","icon":"🏝️","label":"離島／海外","desc":"澎湖、金門、馬祖或海外","tag":"離島海外"}],"next":"identity"},{"id":"identity","short":"身份","tag":"身份","type":"multi","keepExisting":true,"lineMode":"perOption","title":"請問您目前比較符合哪些身份？","note":"除了記錄身份，也決定是否加問「教練培訓興趣」。最多選 2 項（V5）；選項、圖示、標籤沿用上線版；每個選項各占一行（Chatisfy 才會逐項貼標）","options":[{"id":"self","icon":"🌱","label":"我自己想維持與提升腦健康","tag":"一般民眾"},{"id":"family","icon":"👨‍👩‍👧","label":"我關心或陪伴家人的腦健康","tag":"家屬照護者"},{"id":"care_pro","icon":"🩺","label":"我是照護／長照／健康相關專業人員","tag":"照護專業"},{"id":"educator","icon":"🎓","label":"我從事教育、活動帶領或社區服務","tag":"教育活動帶領者"},{"id":"second_career","icon":"🧭","label":"我正在規劃退休後或第二職涯","tag":"第二職涯"},{"id":"other","icon":"✏️","label":"其他","tag":"其他"}],"next":"age","maxPicks":2},{"id":"age","short":"年齡","type":"single","keepExisting":true,"title":"請問您的年齡範圍是？","options":[{"id":"u45","icon":"🌱","label":"45歲以下"},{"id":"a46_55","icon":"🌿","label":"46～55歲"},{"id":"a56_65","icon":"🌳","label":"56～65歲"},{"id":"a66_75","icon":"🌲","label":"66～75歲"},{"id":"a76p","icon":"🍂","label":"76歲以上"}],"next":"brain_focus"},{"id":"brain_focus","branch":"A","short":"想加強","type":"multi","maxPicks":2,"title":"您最想加強哪些方面？","showIf":{"q":"need","in":["brain_age"]},"options":[{"id":"memory","icon":"🧩","label":"記憶力"},{"id":"focus","icon":"🎯","label":"專注力"},{"id":"reaction","icon":"⚡","label":"反應速度"},{"id":"mood","icon":"🌤️","label":"情緒與壓力"},{"id":"sleep","icon":"😴","label":"睡眠品質"},{"id":"balance","icon":"🧘","label":"體能與平衡"}],"next":"brain_mri"},{"id":"brain_mri","branch":"A","short":"腦年齡檢測","type":"single","title":"想進一步了解 MRI 腦年齡檢測嗎？","showIf":{"q":"need","in":["brain_age"]},"options":[{"id":"detail","icon":"🧠","label":"想知道檢測方式與費用","tag":"想了解"},{"id":"talk_first","icon":"🎤","label":"想先參加講座了解","tag":"先聽講座"},{"id":"not_now","icon":"🙂","label":"目前先不用","tag":"先不用"}],"next":"sl_for"},{"id":"sl_for","branch":"B","short":"身腦齡活課程對象","tag":"身腦齡活對象","type":"multi","maxPicks":2,"title":"您是為誰了解身腦齡活課程？","showIf":{"q":"need","in":["course"]},"options":[{"id":"me","icon":"🙋","label":"我自己"},{"id":"parent","icon":"👵","label":"父母或長輩"},{"id":"spouse","icon":"💑","label":"配偶或伴侶"},{"id":"others","icon":"👨‍👩‍👧","label":"其他家人或朋友"}],"next":"sl_intent"},{"id":"sl_intent","branch":"B","short":"身腦齡活參加意願","tag":"身腦齡活意願","type":"single","title":"您對身腦齡活課程的參加意願是？","hint":"每堂課 2 小時，每堂獨立，隨時可以加入","showIf":{"q":"need","in":["course"]},"options":[{"id":"enroll","icon":"🙌","label":"想報名整期課程","tag":"想報名"},{"id":"trial","icon":"🎟️","label":"想先單堂體驗","tag":"單堂體驗"},{"id":"info","icon":"📄","label":"先了解課程內容","tag":"先了解"}],"next":"sl_budget"},{"id":"sl_budget","branch":"B","short":"身腦齡活專案預算","tag":"身腦齡活預算","type":"single","title":"針對為期 4～12 週的完整身腦齡活課程（每週 1-2 堂，每堂 2 小時），您認為合適的專案預算是？","note":"用單堂／整期計價，降低單堂的價格敏感度；只出現在第 1 題選了「身腦齡活課程」的人","showIf":{"q":"need","in":["course"]},"options":[{"id":"b3000","icon":"🎟️","label":"3,000 元（單堂體驗價）","tag":"單堂3000"},{"id":"b10000","icon":"📗","label":"10,000 元（4 堂課，最低基礎）","tag":"4堂10000"},{"id":"b30000","icon":"🏆","label":"30,000 元（完整一期 12 堂課）","desc":"有 5,000 元全勤獎金、5,000 元腦年齡檢測補助","tag":"整期30000"}],"next":"cog_for"},{"id":"cog_for","branch":"C","short":"認知賦能課程對象","tag":"認知賦能對象","type":"multi","maxPicks":2,"title":"您是為誰了解認知賦能課程？","showIf":{"q":"need","in":["cognitive"]},"options":[{"id":"me","icon":"🙋","label":"我自己"},{"id":"parent","icon":"👵","label":"父母或長輩"},{"id":"spouse","icon":"💑","label":"配偶或伴侶"},{"id":"others","icon":"👨‍👩‍👧","label":"其他家人或朋友"}],"next":"cog_intent"},{"id":"cog_intent","branch":"C","short":"認知賦能參加意願","tag":"認知賦能意願","type":"single","title":"您對認知賦能課程的參加意願是？","hint":"每堂課 2 小時","showIf":{"q":"need","in":["cognitive"]},"options":[{"id":"enroll","icon":"🙌","label":"想報名整期課程","tag":"想報名"},{"id":"trial","icon":"🎟️","label":"想先單堂體驗","tag":"單堂體驗"},{"id":"info","icon":"📄","label":"先了解課程內容","tag":"先了解"}],"next":"cog_budget"},{"id":"cog_budget","branch":"C","short":"認知賦能專案預算","tag":"認知賦能預算","type":"single","title":"針對為期 4～12 週的完整認知賦能課程（每週 1-2 堂，每堂 2 小時），您認為合適的專案預算是？","note":"只出現在第 1 題選了「認知賦能課程」的人","showIf":{"q":"need","in":["cognitive"]},"options":[{"id":"b3600","icon":"🎟️","label":"3,600 元（單堂體驗價）","tag":"單堂3600"},{"id":"b13000","icon":"📗","label":"13,000 元（4 堂課，最低基礎）","tag":"4堂13000"},{"id":"b36000","icon":"🏆","label":"36,000 元（完整一期 12 堂課）","tag":"整期36000"}],"next":"coach_bg"},{"id":"coach_bg","branch":"D","short":"相關背景","tag":"教練背景","type":"multi","maxPicks":2,"title":"您目前有哪些相關背景？","showIf":{"q":"need","in":["coach"]},"options":[{"id":"care","icon":"🤲","label":"照護／長照"},{"id":"medical","icon":"🩺","label":"醫療／復健"},{"id":"fitness","icon":"💪","label":"運動教練／體適能"},{"id":"edu","icon":"🎓","label":"教育／社區帶領"},{"id":"none","icon":"🌱","label":"沒有相關經驗","exclusive":true}],"next":"coach_plan"},{"id":"coach_plan","branch":"D","short":"教練規劃","type":"single","title":"取得教練資格後，您最想怎麼運用？","showIf":{"q":"need","in":["coach"]},"options":[{"id":"business","icon":"💼","label":"開課創業／斜槓收入","tag":"開課創業"},{"id":"at_work","icon":"🏥","label":"運用在現在的工作"},{"id":"family_self","icon":"🏡","label":"照顧家人與自己"},{"id":"explore","icon":"🔍","label":"先了解看看"}],"next":"event_topics"},{"id":"event_topics","branch":"E","short":"講座主題","type":"multi","maxPicks":2,"title":"您對哪些講座主題有興趣？","showIf":{"q":"need","in":["events"]},"options":[{"id":"prevention","icon":"🛡️","label":"失智預防"},{"id":"brain_training","icon":"🧩","label":"腦力訓練"},{"id":"movement","icon":"🤸","label":"運動與平衡"},{"id":"brain_age_test","icon":"🧠","label":"腦年齡與檢測"},{"id":"caregiving","icon":"💛","label":"家屬陪伴技巧"},{"id":"retirement","icon":"🧭","label":"退休生活規劃"}],"next":"event_group"},{"id":"event_group","branch":"E","short":"同行人數","tag":"同行","type":"single","title":"通常會幾個人一起參加？","showIf":{"q":"need","in":["events"]},"options":[{"id":"solo","icon":"🙋","label":"自己參加"},{"id":"small","icon":"👫","label":"2～3 人"},{"id":"group","icon":"👥","label":"4 人以上（可揪團）","tag":"揪團"}],"next":"family_who"},{"id":"family_who","branch":"F","short":"關心的家人","tag":"家人","type":"single","title":"您關心的家人是？","showIf":{"q":"need","in":["family_health"]},"options":[{"id":"parent","icon":"👵","label":"父母／長輩"},{"id":"spouse","icon":"💑","label":"配偶／伴侶"},{"id":"other_family","icon":"👨‍👩‍👧","label":"其他家人"}],"next":"family_status"},{"id":"family_status","branch":"F","short":"家人狀態","type":"single","title":"家人目前的狀態比較接近？","note":"用字維持非醫療描述，不做評估或診斷；答案決定完成頁給哪一種下一步","showIf":{"q":"need","in":["family_health"]},"options":[{"id":"well","icon":"🌱","label":"生活自理良好，想預防保養","tag":"預防保養"},{"id":"forgetful","icon":"🧩","label":"最近較常忘東忘西，想及早練習","tag":"及早練習"},{"id":"in_care","icon":"🤝","label":"有照護需求，想找適合的活動","tag":"照護活動"},{"id":"unsure","icon":"💬","label":"不確定，想找人聊聊","tag":"想諮詢"}],"next":"org_type"},{"id":"org_type","branch":"G","short":"單位類型","tag":"單位","type":"single","title":"請問您代表的單位是？","showIf":{"q":"need","in":["partner"]},"options":[{"id":"company","icon":"🏢","label":"企業"},{"id":"community","icon":"🏘️","label":"社區發展協會／里辦公處","tag":"社區"},{"id":"care_org","icon":"🏥","label":"長照／醫療機構"},{"id":"school","icon":"🏫","label":"學校／教育單位"},{"id":"org_other","icon":"✳️","label":"其他團體"}],"next":"org_forms"},{"id":"org_forms","branch":"G","short":"合作形式","type":"multi","maxPicks":2,"title":"想洽談哪些合作形式？","showIf":{"q":"need","in":["partner"]},"options":[{"id":"talk","icon":"🎤","label":"單場講座"},{"id":"series","icon":"📚","label":"系列課程"},{"id":"seed_coach","icon":"🏅","label":"種子教練培訓"},{"id":"co_event","icon":"🤝","label":"活動合辦"}],"next":"org_size"},{"id":"org_size","branch":"G","short":"預計人數","tag":"人數","type":"single","title":"預計參與人數？","showIf":{"q":"need","in":["partner"]},"options":[{"id":"n_u20","icon":"👤","label":"20 人以下"},{"id":"n21_50","icon":"👥","label":"21～50 人"},{"id":"n51_100","icon":"🏟️","label":"51～100 人"},{"id":"n100p","icon":"🎪","label":"100 人以上"}],"next":"coach_interest"},{"id":"coach_interest","branch":"X","short":"教練培訓興趣","tag":"教練興趣","type":"single","title":"您也有興趣了解「身腦齡活教練培訓」嗎？","hint":"您的背景很適合帶領身腦齡活課程","showIf":{"all":[{"q":"identity","in":["care_pro","educator","second_career"]},{"q":"need","in":["brain_age","course","cognitive","events","family_health"]},{"q":"need_more","notIn":["coach"]}]},"options":[{"id":"yes","icon":"🏅","label":"有興趣，想了解","tag":"有興趣"},{"id":"no","icon":"🙂","label":"先不用"}],"next":"class_time"},{"id":"class_time","short":"上課時段","type":"multi","maxPicks":2,"title":"您方便上課的時段是？","note":"第 1 或第 2 題有選任一種課程才問（取代原本的「方便時段」）","showIf":{"any":[{"q":"need","in":["course","cognitive"]},{"q":"need_more","in":["course","cognitive"]}]},"options":[{"id":"wd_day","icon":"☀️","label":"平日白天"},{"id":"wd_night","icon":"🌙","label":"平日晚上"},{"id":"we_day","icon":"🌤️","label":"週末白天"},{"id":"we_night","icon":"🌃","label":"週末晚上"},{"id":"any","icon":"🕘","label":"時間都可以","exclusive":true}],"next":"contact_time"},{"id":"contact_time","short":"聯繫時段","type":"multi","maxPicks":2,"title":"方便我們聯繫您的時段是？","note":"兩種課程都沒選的人才問；和上課時段二選一，每人剛好一題","showIf":{"all":[{"q":"need","notIn":["course","cognitive"]},{"q":"need_more","notIn":["course","cognitive"]}]},"options":[{"id":"wd_day","icon":"☀️","label":"平日白天"},{"id":"wd_night","icon":"🌙","label":"平日晚上"},{"id":"we_day","icon":"🌤️","label":"週末白天"},{"id":"we_night","icon":"🌃","label":"週末晚上"},{"id":"any","icon":"🕘","label":"隨時都可以","exclusive":true}],"next":"FINISH"}],"finish":{"title":"感謝您的填寫！","intro":"我們已經更了解您關心的方向，以下是為您安排的下一步。","primaryBy":"need","segmentBy":["need","need_more"],"sendAskMessage":true,"defaultButtonLabel":"回到 LINE","askButtonLabel":"回到官方 LINE 詢問","kindLabels":{"ask":"已幫您傳到官方 LINE","askNotSent":"請到官方 LINE 詢問","notify":"優先通知","info":"分享資訊","link":"附報名連結"},"lineMessage":{"title":"感謝您完成問卷 🌿","intro":"以下是您的會員問卷填答紀錄，方便您再次確認自己的需求與選擇。","recordIcon":"📋","recordTitle":"我的會員問卷紀錄","divider":"━━━━━━━━━━","nextStepsTitle":"📌 下一步","closing":"期待陪您一起動腦、動身，巫奉約身腦齡活關心您身心靈健康。","askTitle":"我想詢問："},"nextSteps":[{"id":"brain_test","group":"brain_age","kind":"ask","showIf":{"all":[{"q":"need","in":["brain_age"]},{"q":"brain_mri","in":["detail"]}]},"title":"MRI 腦年齡檢測","body":"檢測方式與費用，請直接在官方 LINE 詢問，我們會在聊天室回覆您。","line":"MRI 腦年齡檢測：檢測方式與費用，請在官方 LINE 詢問","tag":"詢問_腦年齡檢測","ask":"MRI 腦年齡檢測的方式與費用"},{"id":"brain_tips","group":"brain_age","kind":"info","showIf":{"all":[{"q":"need","in":["brain_age"]},{"q":"brain_mri","in":["not_now"]}]},"title":"動腦動身小練習","body":"我們會依您想加強的方向，分享適合的練習。想了解 MRI 腦年齡檢測時，隨時在官方 LINE 詢問。","line":"動腦動身小練習：依您想加強的方向分享練習","tag":"資訊_腦健康練習"},{"id":"brain_more","group":"brain_age","kind":"info","showIf":{"q":"need_more","in":["brain_age"]},"title":"MRI 腦年齡檢測","body":"想了解檢測方式與費用，可以直接在官方 LINE 詢問。","line":"MRI 腦年齡檢測：想了解方式與費用，可以在官方 LINE 詢問","tag":"資訊_腦年齡檢測"},{"id":"sl_enroll","group":"course","kind":"link","showIf":{"all":[{"q":"need","in":["course"]},{"q":"sl_intent","in":["enroll"]}]},"title":"報名身腦齡活課程","body":"每堂課獨立，隨時可以加入。請填寫課程報名表，我們會與您聯繫。","line":"報名身腦齡活課程：課程報名表 https://script.google.com/macros/s/AKfycbwn94ZfbQKfVLCAc98stKTigNMg3irHLInk1nc9SIHzZmrPObP8k5fGMBI9pV5f12ERhQ/exec","tag":"連結_身腦齡活課程報名","link":{"label":"填寫課程報名表","url":"https://script.google.com/macros/s/AKfycbwn94ZfbQKfVLCAc98stKTigNMg3irHLInk1nc9SIHzZmrPObP8k5fGMBI9pV5f12ERhQ/exec"}},{"id":"sl_trial","group":"course","kind":"link","showIf":{"all":[{"q":"need","in":["course"]},{"q":"sl_intent","in":["trial"]}]},"title":"預約身腦齡活單堂體驗","body":"請填寫課程報名表預約單堂體驗，我們會與您確認時間與地點。","line":"身腦齡活單堂體驗：課程報名表 https://script.google.com/macros/s/AKfycbwn94ZfbQKfVLCAc98stKTigNMg3irHLInk1nc9SIHzZmrPObP8k5fGMBI9pV5f12ERhQ/exec","tag":"連結_身腦齡活體驗","link":{"label":"填寫課程報名表","url":"https://script.google.com/macros/s/AKfycbwn94ZfbQKfVLCAc98stKTigNMg3irHLInk1nc9SIHzZmrPObP8k5fGMBI9pV5f12ERhQ/exec"}},{"id":"sl_info","group":"course","kind":"link","showIf":{"all":[{"q":"need","in":["course"]},{"q":"sl_intent","in":["info"]}]},"title":"身腦齡活課程介紹","body":"我們會在官方 LINE 分享身腦齡活課程的內容；想報名或體驗時，可以直接填寫課程報名表。","line":"身腦齡活課程介紹：會在官方 LINE 分享內容；報名表 https://script.google.com/macros/s/AKfycbwn94ZfbQKfVLCAc98stKTigNMg3irHLInk1nc9SIHzZmrPObP8k5fGMBI9pV5f12ERhQ/exec","tag":"資訊_身腦齡活課程介紹","link":{"label":"填寫課程報名表","url":"https://script.google.com/macros/s/AKfycbwn94ZfbQKfVLCAc98stKTigNMg3irHLInk1nc9SIHzZmrPObP8k5fGMBI9pV5f12ERhQ/exec"}},{"id":"sl_more","group":"course","kind":"link","showIf":{"q":"need_more","in":["course"]},"title":"身腦齡活課程","body":"預防保養、維持活力。想報名或單堂體驗，可以直接填寫課程報名表。","line":"身腦齡活課程：課程報名表 https://script.google.com/macros/s/AKfycbwn94ZfbQKfVLCAc98stKTigNMg3irHLInk1nc9SIHzZmrPObP8k5fGMBI9pV5f12ERhQ/exec","tag":"連結_身腦齡活課程","link":{"label":"填寫課程報名表","url":"https://script.google.com/macros/s/AKfycbwn94ZfbQKfVLCAc98stKTigNMg3irHLInk1nc9SIHzZmrPObP8k5fGMBI9pV5f12ERhQ/exec"}},{"id":"cog_enroll","group":"cognitive","kind":"link","showIf":{"all":[{"q":"need","in":["cognitive"]},{"q":"cog_intent","in":["enroll"]}]},"title":"報名認知賦能課程","body":"請填寫課程報名表，我們會與您聯繫。","line":"報名認知賦能課程：課程報名表 https://script.google.com/macros/s/AKfycbwn94ZfbQKfVLCAc98stKTigNMg3irHLInk1nc9SIHzZmrPObP8k5fGMBI9pV5f12ERhQ/exec","tag":"連結_認知賦能課程報名","link":{"label":"填寫課程報名表","url":"https://script.google.com/macros/s/AKfycbwn94ZfbQKfVLCAc98stKTigNMg3irHLInk1nc9SIHzZmrPObP8k5fGMBI9pV5f12ERhQ/exec"}},{"id":"cog_trial","group":"cognitive","kind":"link","showIf":{"all":[{"q":"need","in":["cognitive"]},{"q":"cog_intent","in":["trial"]}]},"title":"預約認知賦能單堂體驗","body":"請填寫課程報名表預約單堂體驗，我們會與您確認時間與地點。","line":"認知賦能單堂體驗：課程報名表 https://script.google.com/macros/s/AKfycbwn94ZfbQKfVLCAc98stKTigNMg3irHLInk1nc9SIHzZmrPObP8k5fGMBI9pV5f12ERhQ/exec","tag":"連結_認知賦能體驗","link":{"label":"填寫課程報名表","url":"https://script.google.com/macros/s/AKfycbwn94ZfbQKfVLCAc98stKTigNMg3irHLInk1nc9SIHzZmrPObP8k5fGMBI9pV5f12ERhQ/exec"}},{"id":"cog_info","group":"cognitive","kind":"link","showIf":{"all":[{"q":"need","in":["cognitive"]},{"q":"cog_intent","in":["info"]}]},"title":"認知賦能課程介紹","body":"我們會在官方 LINE 分享認知賦能課程的內容；想報名或體驗時，可以直接填寫課程報名表。","line":"認知賦能課程介紹：會在官方 LINE 分享內容；報名表 https://script.google.com/macros/s/AKfycbwn94ZfbQKfVLCAc98stKTigNMg3irHLInk1nc9SIHzZmrPObP8k5fGMBI9pV5f12ERhQ/exec","tag":"資訊_認知賦能課程介紹","link":{"label":"填寫課程報名表","url":"https://script.google.com/macros/s/AKfycbwn94ZfbQKfVLCAc98stKTigNMg3irHLInk1nc9SIHzZmrPObP8k5fGMBI9pV5f12ERhQ/exec"}},{"id":"cog_more","group":"cognitive","kind":"link","showIf":{"q":"need_more","in":["cognitive"]},"title":"認知賦能課程","body":"適合已經出現認知異常的人。想報名或單堂體驗，可以直接填寫課程報名表。","line":"認知賦能課程：課程報名表 https://script.google.com/macros/s/AKfycbwn94ZfbQKfVLCAc98stKTigNMg3irHLInk1nc9SIHzZmrPObP8k5fGMBI9pV5f12ERhQ/exec","tag":"連結_認知賦能課程","link":{"label":"填寫課程報名表","url":"https://script.google.com/macros/s/AKfycbwn94ZfbQKfVLCAc98stKTigNMg3irHLInk1nc9SIHzZmrPObP8k5fGMBI9pV5f12ERhQ/exec"}},{"id":"coach","group":"coach","kind":"link","showIf":{"any":[{"q":"need","in":["coach"]},{"q":"need_more","in":["coach"]},{"q":"coach_interest","in":["yes"]}]},"title":"教練培訓預約","body":"入門班 15,000 元、進階班 65,000 元，費用固定。請填寫預約表，我們會與您聯繫。","line":"教練培訓預約表：https://script.google.com/macros/s/AKfycbwO4dcrJddezsTCiOmOrkV6qLR_n29b7Aq3AronRzBnF-ho7y4YAUg9MjMoSxbe3KK3/exec","tag":"連結_教練培訓預約","link":{"label":"填寫教練培訓預約表","url":"https://script.google.com/macros/s/AKfycbwO4dcrJddezsTCiOmOrkV6qLR_n29b7Aq3AronRzBnF-ho7y4YAUg9MjMoSxbe3KK3/exec"}},{"id":"events","group":"events","kind":"notify","showIf":{"any":[{"q":"need","in":["events"]},{"q":"need_more","in":["events"]},{"all":[{"q":"need","in":["brain_age"]},{"q":"brain_mri","in":["talk_first"]}]}]},"title":"講座與活動","body":"有您感興趣的新場次時，會優先通知您；想查近期場次，也可以在官方 LINE 詢問。","line":"講座與活動：有新場次時優先通知您","tag":"通知_講座活動"},{"id":"family_consult","group":"family_health","kind":"ask","showIf":{"all":[{"q":"need","in":["family_health"]},{"q":"family_status","in":["in_care","unsure"]}]},"title":"家人腦健康諮詢","body":"家人的狀況，歡迎在官方 LINE 和我們聊聊。","line":"家人腦健康諮詢：歡迎在官方 LINE 和我們聊聊","tag":"詢問_家人諮詢","ask":"家人腦健康諮詢"},{"id":"family_class","group":"family_health","kind":"info","showIf":{"all":[{"q":"need","in":["family_health"]},{"q":"family_status","in":["well","forgetful"]}]},"title":"陪伴家人","body":"先領取下方《向失智說再見》友善手冊；適合家人的課程，我們會在官方 LINE 分享。","line":"陪伴家人：先看《向失智說再見》友善手冊，適合家人的課程會在官方 LINE 分享","tag":"資訊_家人課程"},{"id":"family_more","group":"family_health","kind":"info","showIf":{"q":"need_more","in":["family_health"]},"title":"陪伴家人","body":"先領取下方《向失智說再見》友善手冊；想聊聊家人的狀況，可以在官方 LINE 留言。","line":"陪伴家人：先看《向失智說再見》友善手冊，想聊聊可以在官方 LINE 留言","tag":"資訊_家人陪伴"},{"id":"partner","group":"partner","kind":"ask","showIf":{"q":"need","in":["partner"]},"title":"機構合作","body":"專人會透過官方 LINE 與您聯繫，討論合作形式與時間。","line":"機構合作：專人會透過官方 LINE 與您聯繫","tag":"詢問_機構合作","ask":"洽談機構合作"},{"id":"partner_more","group":"partner","kind":"info","showIf":{"q":"need_more","in":["partner"]},"title":"機構合作","body":"想洽談講座、課程或種子教練合作，可以在官方 LINE 留言，專人會與您聯繫。","line":"機構合作：想洽談可以在官方 LINE 留言","tag":"資訊_機構合作"}]}};
     //@@END SurveyConfig
     var CONFIG_PROBLEMS = SurveyCore.lintConfig(SURVEY_CONFIG);
 
@@ -938,6 +997,34 @@ var SurveyCore = (function () {
           error: sdkError('close', err, '請點畫面右上角的關閉按鈕返回 LINE。') });
       }
     }
+    /** 報名表／預約表：只允許設定檔下一步卡片裡列出的網址（完全相同才放行），用 liff.openWindow 開啟。 */
+    function allowedLinkUrls() {
+      var urls = {};
+      ((SURVEY_CONFIG.finish && SURVEY_CONFIG.finish.nextSteps) || []).forEach(function (s) {
+        if (s && s.link && typeof s.link.url === 'string') urls[s.link.url] = true;
+      });
+      return urls;
+    }
+    var openWindows = {};   // 防止同一個要求被重複處理
+    function handleOpen(data) {
+      if (!validId(data.requestId) || openWindows[data.requestId]) return;
+      openWindows[data.requestId] = true;
+      var fail = function (code, message, err) {
+        post('FWV2_ACTION_RESULT', { requestId: data.requestId, action: 'open', status: 'failed',
+          error: err ? sdkError('open', err, message) : safeError('open', code, message) });
+      };
+      if (typeof data.url !== 'string' || !allowedLinkUrls()[data.url]) { fail('OPEN_NOT_ALLOWED', '這個連結不在允許清單內。'); return; }
+      if (liffState.status !== 'ready' || !liffState.inClient || !window.liff || typeof window.liff.openWindow !== 'function') {
+        fail('OPEN_UNAVAILABLE', '請改用瀏覽器開啟連結。');
+        return;
+      }
+      try {
+        window.liff.openWindow({ url: data.url, external: false });
+        post('FWV2_ACTION_RESULT', { requestId: data.requestId, action: 'open', status: 'success', error: null });
+      } catch (err) {
+        fail('OPEN_FAILED', '無法開啟連結。', err);
+      }
+    }
     function onMessage(event) {
       var data = event.data;
       if (!data || typeof data !== 'object' || Array.isArray(data) ||
@@ -954,6 +1041,7 @@ var SurveyCore = (function () {
       if (!childSource || event.source !== childSource || event.origin !== childOrigin) return;
       if (data.type === 'FWV2_SEND') handleSend(data);
       else if (data.type === 'FWV2_CLOSE') handleClose(data);
+      else if (data.type === 'FWV2_OPEN') handleOpen(data);
     }
 
     function start() {
